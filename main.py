@@ -33,7 +33,11 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--strategy", type=str, required=True, choices=["dca"], help="Strategy to run"
+        "--strategy",
+        type=str,
+        required=True,
+        choices=["dca, bnh"],
+        help="Strategy to run",
     )
 
     parser.add_argument(
