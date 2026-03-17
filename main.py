@@ -1,15 +1,10 @@
 from datetime import datetime, timezone
 import argparse
 
-import backtrader as bt
-
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
-
-from local_settings import alpaca_paper
-from dcaplotting import DollarCostAveraging
-from bnhplotting import BuyAndHold
+from backtesting.runner import run_backtest
+from config import CASH_DEFAULT, COMMISSION_DEFAULT
+from strategies.dca import DollarCostAveraging
+from strategies.buy_and_hold import BuyAndHold
 
 
 def parse_args():
@@ -41,10 +36,15 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--cash", type=float, default=10000.0, help="Initial cash for the backtest"
+        "--cash", type=float, default=CASH_DEFAULT, help="Initial cash for the backtest"
     )
 
-    parser.add_argument("--commission", type=float, default=0.0, help="Commission rate")
+    parser.add_argument(
+        "--commission",
+        type=float,
+        default=COMMISSION_DEFAULT,
+        help="Commission rate",
+    )
 
     return parser.parse_args()
 
@@ -61,65 +61,6 @@ def get_strategy_class(strategy_name: str):
     return strategy_map[strategy_name]
 
 
-def run_backtest(
-    symbol: str,
-    start: datetime,
-    end: datetime,
-    strategy_name: str,
-    cash: float,
-    commission: float,
-):
-    client = StockHistoricalDataClient(
-        alpaca_paper["api_key"],
-        alpaca_paper["api_secret"],
-    )
-
-    request = StockBarsRequest(
-        symbol_or_symbols=[symbol],
-        timeframe=TimeFrame.Day,
-        start=start,
-        end=end,
-        adjustment="raw",
-    )
-
-    bars = client.get_stock_bars(request)
-    df = bars.df
-
-    if df.index.nlevels == 2:
-        df = df.xs(symbol)
-
-    print(df.head())
-    print("\nRows:", len(df))
-    print("Columns:", list(df.columns))
-    print("Index type:", type(df.index))
-
-    df_bt = df[["open", "high", "low", "close", "volume"]].copy()
-
-    if getattr(df_bt.index, "tz", None) is not None:
-        df_bt.index = df_bt.index.tz_convert(None)
-
-    print(df_bt.head())
-    print("tz:", df_bt.index.tz)
-
-    data = bt.feeds.PandasData(dataname=df_bt)
-
-    cerebro = bt.Cerebro()
-    cerebro.adddata(data, name=symbol)
-
-    strategy_class = get_strategy_class(strategy_name)
-    cerebro.addstrategy(strategy_class)
-
-    cerebro.broker.setcash(cash)
-    cerebro.broker.setcommission(commission=commission)
-
-    print("Bars loaded:", len(df_bt))
-    print("Starting value:", cerebro.broker.getvalue())
-
-    cerebro.run()
-
-    print("Final value:", cerebro.broker.getvalue())
-
-
 def main():
     args = parse_args()
 
@@ -129,11 +70,13 @@ def main():
     if start >= end:
         raise ValueError("Start date must be earlier than end date.")
 
+    strategy_cls = get_strategy_class(args.strategy)
+
     run_backtest(
         symbol=args.symbol,
         start=start,
         end=end,
-        strategy_name=args.strategy,
+        strategy=strategy_cls,
         cash=args.cash,
         commission=args.commission,
     )
