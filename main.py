@@ -36,7 +36,7 @@ def parse_args():
         "--strategy",
         type=str,
         required=True,
-        choices=["dca, bnh"],
+        choices=["dca", "bnh"],
         help="Strategy to run",
     )
 

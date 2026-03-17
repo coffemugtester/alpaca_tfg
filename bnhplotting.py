@@ -3,17 +3,9 @@ import backtrader as bt
 
 
 class BuyAndHold(bt.Strategy):
-    """
-    Buy & Hold con inversión limitada:
-    - El broker puede tener más cash (p.ej. 10.000$ en paper).
-    - La estrategia invierte solo una vez un importe fijo (p.ej. 1200$).
-    - Mantiene la posición hasta el final.
-    - Registra cash, valor de la posición y valor total.
-    """
-
     params = dict(
-        entry_cash=1200.0,  # cuánto invertir en la entrada
-        allow_fractional=True,  # False si quieres unidades enteras
+        allow_fractional=True,
+        cash_buffer=0.995,  # invierte el 99.5% para evitar rechazo por redondeo/gap
     )
 
     def __init__(self):
@@ -22,7 +14,8 @@ class BuyAndHold(bt.Strategy):
         self.position_value = []
         self.total_value = []
 
-        self.entered = False  # asegura una sola compra
+        self.entered = False
+        self.order = None
 
     def next(self):
         dt = self.datas[0].datetime.date(0)
@@ -39,19 +32,34 @@ class BuyAndHold(bt.Strategy):
         self.position_value.append(pos_value)
         self.total_value.append(value)
 
-        # Comprar una sola vez usando SOLO entry_cash (o menos si no hay suficiente cash)
-        if not self.entered:
-            invest = min(
-                float(self.p.entry_cash), cash
-            )  # por si el broker tuviese menos
+        # Buy once at the beginning using almost all available cash
+        if not self.entered and self.order is None:
+            invest = cash * self.p.cash_buffer
             size = invest / close
 
             if not self.p.allow_fractional:
                 size = int(size)
 
             if size > 0:
-                self.buy(size=size)
-                self.entered = True
+                self.order = self.buy(size=size)
+
+    def notify_order(self, order):
+        if order.status in [order.Submitted, order.Accepted]:
+            return
+
+        if order.status == order.Completed:
+            print(
+                f"BUY EXECUTED | Price: {order.executed.price:.2f} | "
+                f"Size: {order.executed.size:.6f} | "
+                f"Cost: {order.executed.value:.2f} | "
+                f"Comm: {order.executed.comm:.2f}"
+            )
+            self.entered = True
+
+        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+            print(f"ORDER FAILED | Status: {order.getstatusname()}")
+
+        self.order = None
 
     def stop(self):
         plt.figure(figsize=(10, 6))
@@ -62,11 +70,8 @@ class BuyAndHold(bt.Strategy):
 
         plt.xlabel("Date")
         plt.ylabel("Value ($)")
-        plt.title("Buy & Hold (Entry = 1200$) - Portfolio Breakdown")
+        plt.title("Buy & Hold - Portfolio Breakdown")
         plt.legend()
         plt.grid(True)
-
         plt.tight_layout()
         plt.show()
-        # plt.savefig("reports/buy_and_hold_portfolio.png")
-        # pltclose()
