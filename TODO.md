@@ -15,3 +15,12 @@ Métricas de rendimiento:
 DevEx:
 
 - list dependencies and whitelist them
+
+## Completed
+
+**v0.0.1 (2026-03-20)** - Stage 1: Basic Metrics Comparison
+- CAGR
+- Max Drawdown
+- Sharpe Ratio
+- Calmar Ratio
+- Partial: Consistencia (win rate, volatility implemented; drawdown duration pending)
