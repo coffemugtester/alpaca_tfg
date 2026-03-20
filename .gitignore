@@ -3,3 +3,4 @@ local_settings.py
 .null-ls*
 __pycache__/
 .mypy_cache
+.devcontainer
