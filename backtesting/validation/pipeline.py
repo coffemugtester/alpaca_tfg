@@ -144,7 +144,7 @@ class ValidationPipeline:
         # Attach analyzers (Issue 1: TimeReturn for equity curve, Issue 2: Pipeline attaches)
         cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe', riskfreerate=0.0)
         cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
-        cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
+        cerebro.addanalyzer(bt.analyzers.TimeReturn, _name='timereturn')
 
         # Run backtest (Issue 7: verbose=False, plot=False for comparison mode)
         # Note: We're not using the modified run_backtest() here because we need

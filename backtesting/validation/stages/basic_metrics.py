@@ -84,7 +84,7 @@ class BasicMetricsStage:
         # Get analyzer results
         sharpe_analyzer = getattr(strat.analyzers, 'sharpe', None)
         drawdown_analyzer = getattr(strat.analyzers, 'drawdown', None)
-        returns_analyzer = getattr(strat.analyzers, 'returns', None)
+        timereturn_analyzer = getattr(strat.analyzers, 'timereturn', None)
 
         # Extract Sharpe ratio
         sharpe_ratio = None
@@ -100,11 +100,10 @@ class BasicMetricsStage:
             if max_drawdown is not None:
                 max_drawdown = max_drawdown / 100.0  # Convert percentage to decimal
 
-        # Extract returns data for volatility and win rate
+        # Extract time-series returns for volatility and win rate
         returns_data = None
-        if returns_analyzer:
-            returns_dict = returns_analyzer.get_analysis()
-            returns_data = returns_dict.get('rtot', None)  # Total returns
+        if timereturn_analyzer:
+            returns_data = timereturn_analyzer.get_analysis()  # Dict of date -> return
 
         # Calculate CAGR
         total_return = (final_value - initial_cash) / initial_cash
@@ -124,7 +123,7 @@ class BasicMetricsStage:
         # Calculate win rate and volatility from returns
         win_rate = None
         volatility = None
-        if returns_data is not None and len(returns_data) > 0:
+        if returns_data is not None and isinstance(returns_data, dict) and len(returns_data) > 0:
             returns_array = np.array(list(returns_data.values()))
             win_rate = (returns_array > 0).sum() / len(returns_array)
             # Annualized volatility (assuming daily returns)
