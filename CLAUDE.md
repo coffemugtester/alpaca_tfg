@@ -60,6 +60,15 @@ ALPACA_SECRET_KEY = "your_secret"
 **Dependencies** (no requirements.txt — install manually):
 `alpaca-py`, `backtrader`, `pandas`, `matplotlib`
 
+## gstack
+
+For all web browsing, use the `/browse` skill from gstack. Never use `mcp__claude-in-chrome__*` tools.
+
+**Available gstack skills:**
+`/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/review`, `/ship`, `/browse`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/retro`, `/investigate`, `/document-release`, `/codex`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`
+
+If gstack skills aren't available, run `/gstack-upgrade` to install them.
+
 ## Planned Work
 
 See `TODO.md` for planned performance metrics: total return, CAGR, Sharpe ratio, max drawdown, Calmar ratio, etc.
