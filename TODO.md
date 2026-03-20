@@ -11,3 +11,7 @@ Métricas de rendimiento:
 - Sharpe Ratio
 - Calmar Ratio
 - Consistencia: % de periodos positivos, volatilidad de retornos, duración de drawdowns
+
+DevEx:
+
+- list dependencies and whitelist them
