@@ -173,3 +173,22 @@ class TrendFollowingStrategy(bt.Strategy):
                 self.entry_price = None
 
         self.order = None
+
+    def stop(self) -> None:
+        """Plot portfolio breakdown at end of backtest."""
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(self.dates, self.cash, label="Cash")
+        plt.plot(self.dates, self.position_value, label="Position Value")
+        plt.plot(self.dates, self.total_value, label="Total Portfolio Value")
+
+        plt.xlabel("Date")
+        plt.ylabel("Value ($)")
+        plt.title("TrendFollowing Strategy - Portfolio Breakdown")
+        plt.legend()
+        plt.grid(True)
+
+        plt.tight_layout()
+        plt.show()
+        # plt.savefig("reports/trendfollowing_portfolio.png")
+        # plt.close()

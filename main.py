@@ -5,6 +5,16 @@ from backtesting.validation import ValidationPipeline
 from config import CASH_DEFAULT, COMMISSION_DEFAULT, parse_date, calculate_months_between
 from strategies.dca import DollarCostAveraging
 from strategies.buy_and_hold import BuyAndHold
+from strategies.trendfollow import TrendFollowingStrategy
+
+
+# Canonical strategy registry - single source of truth
+# Maps CLI names (lowercase) to (display name, strategy class) tuples
+STRATEGY_REGISTRY = {
+    "dca": ("DCA", DollarCostAveraging),
+    "bnh": ("Buy & Hold", BuyAndHold),
+    "trendfollowing": ("TrendFollowing", TrendFollowingStrategy),
+}
 
 
 def parse_args():
@@ -31,7 +41,7 @@ def parse_args():
     parser.add_argument(
         "--strategy",
         type=str,
-        choices=["dca", "bnh"],
+        choices=list(STRATEGY_REGISTRY.keys()),
         help="Strategy to run (single-strategy mode)",
     )
 
@@ -57,20 +67,14 @@ def parse_args():
 
 
 def get_strategy_class(strategy_name: str):
-    """Get a single strategy class by name."""
-    strategy_map = {
-        "dca": DollarCostAveraging,
-        "bnh": BuyAndHold,
-    }
-    return strategy_map[strategy_name]
+    """Get a single strategy class by CLI name (e.g., 'dca' -> DollarCostAveraging)."""
+    _display_name, strategy_cls = STRATEGY_REGISTRY[strategy_name]
+    return strategy_cls
 
 
 def get_strategy_map():
-    """Get all registered strategies."""
-    return {
-        "DCA": DollarCostAveraging,
-        "Buy & Hold": BuyAndHold,
-    }
+    """Get all registered strategies as {display_name: strategy_class} dict."""
+    return {display_name: strategy_cls for display_name, strategy_cls in STRATEGY_REGISTRY.values()}
 
 
 def main():

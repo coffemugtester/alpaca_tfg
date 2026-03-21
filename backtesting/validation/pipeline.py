@@ -14,6 +14,7 @@ from data.alpaca_data import fetch_daily_bars
 from backtesting.data_adapter import df_to_bt_feed
 from config import calculate_months_between
 from strategies.dca import DollarCostAveraging
+from strategies.trendfollow import TrendFollowingStrategy
 from .stages.basic_metrics import BasicMetricsStage
 
 
@@ -142,6 +143,9 @@ class ValidationPipeline:
             num_months = calculate_months_between(self.start, self.end)
             monthly_invest = self.cash / num_months
             cerebro.addstrategy(strategy_cls, monthly_invest=monthly_invest)
+        # TrendFollowing: suppress trade logs in comparison mode
+        elif strategy_cls == TrendFollowingStrategy:
+            cerebro.addstrategy(strategy_cls, printlog=False)
         else:
             cerebro.addstrategy(strategy_cls)
 

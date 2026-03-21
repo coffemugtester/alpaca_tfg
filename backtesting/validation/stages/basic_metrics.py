@@ -74,6 +74,19 @@ class BasicMetricsStage:
     ) -> dict[str, Any]:
         """Calculate all metrics for a single strategy."""
 
+        # Detect zero-trade scenario (strategy never entered a position)
+        # Use relative epsilon for floating point comparison
+        epsilon = initial_cash * 1e-6  # 0.0001% tolerance
+        value_change = abs(final_value - initial_cash)
+
+        if value_change < epsilon:
+            raise ValueError(
+                "INSUFFICIENT DATA - Strategy made no trades. "
+                "Final portfolio value equals initial cash. "
+                "This typically indicates indicator warm-up requirements "
+                "(e.g., SMA(200) needs 200+ bars) or overly restrictive entry conditions."
+            )
+
         # Extract analyzers
         strats = cerebro.runstrats
         if not strats or len(strats) == 0:
