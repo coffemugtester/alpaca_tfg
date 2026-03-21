@@ -6,16 +6,18 @@ import matplotlib.pyplot as plt
 
 class TrendFollowingStrategy(bt.Strategy):
     """
-    Algorithmic strategy based on:
-    - Trend filter: short SMA > long SMA and price > long SMA
-    - Momentum confirmation: MACD > signal
-    - Strength filter: RSI within a healthy range
-    - Entry trigger: breakout above upper Bollinger Band
-    - Risk management:
-        * percentage stop-loss
-        * percentage take-profit
-        * exit on trend loss
-        * exit on bearish MACD
+    Entry-timing strategy (buy and hold with smart entries):
+    - Times entries based on technical confluence:
+        * Trend filter: short SMA > long SMA and price > long SMA
+        * Momentum confirmation: MACD > signal
+        * Strength filter: RSI within a healthy range
+        * Entry trigger: breakout above upper Bollinger Band
+    - Invests 10% of available cash on each entry signal
+    - NEVER sells - holds positions forever (like Buy & Hold, but with timed entries)
+    - Allows multiple entries over time, scaling in gradually
+
+    This strategy tests: "Can I beat Buy & Hold by timing my entries,
+    while keeping the same long-term holding approach?"
     """
 
     params = dict(
@@ -29,9 +31,11 @@ class TrendFollowingStrategy(bt.Strategy):
         macd_fast=12,
         macd_slow=26,
         macd_signal=9,
+        # Exit params (currently unused - exits are disabled)
         stop_loss=0.05,  # 5%
         take_profit=0.15,  # 15%
-        cash_buffer=0.995,
+        # Position sizing: 10% of available cash per entry
+        cash_buffer=0.10,
         allow_fractional=True,
         printlog=True,
     )
@@ -39,12 +43,18 @@ class TrendFollowingStrategy(bt.Strategy):
     def __init__(self) -> None:
         self.order = None
         self.entry_price = None
+        self.entry_date = None
+        self.entry_size = None
 
         # Series for portfolio metrics
         self.dates = []
         self.cash = []
         self.position_value = []
         self.total_value = []
+
+        # Trade tracking
+        self.trades = []  # List of completed trades (exits disabled, will be empty)
+        self.entries = []  # List of entry points: {date, price, size, invested}
 
         # Indicators
         self.sma_fast = bt.indicators.SimpleMovingAverage(
@@ -97,70 +107,74 @@ class TrendFollowingStrategy(bt.Strategy):
             return
 
         # =========================
-        # ENTRY
+        # ENTRY (allows multiple entries over time - scales in gradually)
         # =========================
-        if not self.position:
-            trend_ok = close > self.sma_slow[0] and self.sma_fast[0] > self.sma_slow[0]
+        trend_ok = close > self.sma_slow[0] and self.sma_fast[0] > self.sma_slow[0]
+        momentum_ok = self.macd.macd[0] > self.macd.signal[0]
+        rsi_ok = self.p.rsi_min <= self.rsi[0] <= self.p.rsi_max
 
-            momentum_ok = self.macd.macd[0] > self.macd.signal[0]
-            rsi_ok = self.p.rsi_min <= self.rsi[0] <= self.p.rsi_max
+        # Breakout condition: close above upper Bollinger Band
+        breakout_ok = close > self.bbands.top[0]
 
-            # Breakout condition: close above upper Bollinger Band
-            breakout_ok = close > self.bbands.top[0]
+        if trend_ok and momentum_ok and rsi_ok and breakout_ok:
+            # Invest 10% of current cash on each signal
+            invest = cash * self.p.cash_buffer
+            size = invest / close
 
-            if trend_ok and momentum_ok and rsi_ok and breakout_ok:
-                invest = cash * self.p.cash_buffer
-                size = invest / close
+            if not self.p.allow_fractional:
+                size = int(size)
 
-                if not self.p.allow_fractional:
-                    size = int(size)
-
-                if size > 0:
-                    self.log(
-                        f"BUY SIGNAL | Close: {close:.2f} | "
-                        f"SMA{self.p.sma_fast}: {self.sma_fast[0]:.2f} | "
-                        f"SMA{self.p.sma_slow}: {self.sma_slow[0]:.2f} | "
-                        f"RSI: {self.rsi[0]:.2f} | "
-                        f"MACD: {self.macd.macd[0]:.4f} > Signal: {self.macd.signal[0]:.4f}"
-                    )
-                    self.order = self.buy(size=size)
+            if size > 0:
+                self.log(
+                    f"BUY SIGNAL (10% of cash = ${invest:,.2f}) | Close: {close:.2f} | "
+                    f"SMA{self.p.sma_fast}: {self.sma_fast[0]:.2f} | "
+                    f"SMA{self.p.sma_slow}: {self.sma_slow[0]:.2f} | "
+                    f"RSI: {self.rsi[0]:.2f} | "
+                    f"MACD: {self.macd.macd[0]:.4f} > Signal: {self.macd.signal[0]:.4f}"
+                )
+                self.order = self.buy(size=size)
 
         # =========================
-        # EXIT
+        # EXIT (DISABLED - buy and hold approach)
         # =========================
-        else:
-            if self.entry_price is None:
-                return
+        # Exits are commented out to test "time the entry, hold forever" strategy
+        # This tests whether smart entry timing can beat Buy & Hold
+        # while keeping the same long-term holding discipline.
 
-            stop_price = self.entry_price * (1.0 - self.p.stop_loss)
-            take_price = self.entry_price * (1.0 + self.p.take_profit)
-
-            stop_hit = close <= stop_price
-            take_hit = close >= take_price
-
-            trend_lost = (
-                close < self.sma_fast[0]
-                or close < self.sma_slow[0]
-                or self.sma_fast[0] < self.sma_slow[0]
-            )
-
-            macd_bearish = self.macd.macd[0] < self.macd.signal[0]
-
-            if stop_hit:
-                self.log(f"SELL SIGNAL | STOP LOSS | Close: {close:.2f}")
-                self.order = self.sell(size=self.position.size)
-
-            elif take_hit:
-                self.log(f"SELL SIGNAL | TAKE PROFIT | Close: {close:.2f}")
-                self.order = self.sell(size=self.position.size)
-
-            elif trend_lost:
-                self.log(f"SELL SIGNAL | TREND LOST | Close: {close:.2f}")
-                self.order = self.sell(size=self.position.size)
-
-            elif macd_bearish:
-                self.log(f"SELL SIGNAL | MACD BEARISH | Close: {close:.2f}")
-                self.order = self.sell(size=self.position.size)
+        # Original exit logic (disabled):
+        # if self.position:
+        #     if self.entry_price is None:
+        #         return
+        #
+        #     stop_price = self.entry_price * (1.0 - self.p.stop_loss)
+        #     take_price = self.entry_price * (1.0 + self.p.take_profit)
+        #
+        #     stop_hit = close <= stop_price
+        #     take_hit = close >= take_price
+        #
+        #     trend_lost = (
+        #         close < self.sma_fast[0]
+        #         or close < self.sma_slow[0]
+        #         or self.sma_fast[0] < self.sma_slow[0]
+        #     )
+        #
+        #     macd_bearish = self.macd.macd[0] < self.macd.signal[0]
+        #
+        #     if stop_hit:
+        #         self.log(f"SELL SIGNAL | STOP LOSS | Close: {close:.2f}")
+        #         self.order = self.sell(size=self.position.size)
+        #
+        #     elif take_hit:
+        #         self.log(f"SELL SIGNAL | TAKE PROFIT | Close: {close:.2f}")
+        #         self.order = self.sell(size=self.position.size)
+        #
+        #     elif trend_lost:
+        #         self.log(f"SELL SIGNAL | TREND LOST | Close: {close:.2f}")
+        #         self.order = self.sell(size=self.position.size)
+        #
+        #     elif macd_bearish:
+        #         self.log(f"SELL SIGNAL | MACD BEARISH | Close: {close:.2f}")
+        #         self.order = self.sell(size=self.position.size)
 
     def notify_order(self, order: bt.Order) -> None:
         if order.status in [order.Submitted, order.Accepted]:
@@ -168,14 +182,80 @@ class TrendFollowingStrategy(bt.Strategy):
 
         if order.status == order.Completed:
             if order.isbuy():
-                self.entry_price = float(order.executed.price)
-            elif order.issell():
-                self.entry_price = None
+                # Record entry (we never sell, so just track buys)
+                entry_price = float(order.executed.price)
+                entry_date = self.datas[0].datetime.date(0)
+                entry_size = float(order.executed.size)
+                invested = entry_price * entry_size
+
+                self.entries.append({
+                    'date': entry_date,
+                    'price': entry_price,
+                    'size': entry_size,
+                    'invested': invested,
+                })
+
+                # Keep last entry info for reporting
+                self.entry_price = entry_price
+                self.entry_date = entry_date
+                self.entry_size = entry_size
+
+            # No sell handling - exits are disabled
 
         self.order = None
 
     def stop(self) -> None:
-        """Plot portfolio breakdown at end of backtest."""
+        """Print entry summary and plot portfolio breakdown at end of backtest."""
+        # Print entry summary
+        print("\n" + "="*80)
+        print("TRENDFOLLOWING STRATEGY - ENTRY TIMING SUMMARY")
+        print("(Buy and hold with timed entries - no exits)")
+        print("="*80)
+
+        if not self.entries:
+            print("No entries made (likely insufficient data for indicator warm-up).")
+        else:
+            num_entries = len(self.entries)
+            total_invested = sum(e['invested'] for e in self.entries)
+            avg_invested = total_invested / num_entries if num_entries > 0 else 0
+            avg_price = sum(e['price'] for e in self.entries) / num_entries if num_entries > 0 else 0
+
+            # Current position value
+            current_price = float(self.datas[0].close[0])
+            total_shares = sum(e['size'] for e in self.entries)
+            current_value = total_shares * current_price
+            total_gain = current_value - total_invested
+            total_gain_pct = (total_gain / total_invested * 100) if total_invested > 0 else 0
+
+            print(f"Total Entries: {num_entries}")
+            print(f"Total Invested: ${total_invested:,.2f}")
+            print(f"Average per Entry: ${avg_invested:,.2f}")
+            print(f"Average Entry Price: ${avg_price:.2f}")
+            print(f"\nTotal Shares Accumulated: {total_shares:.4f}")
+            print(f"Current Price: ${current_price:.2f}")
+            print(f"Current Position Value: ${current_value:,.2f}")
+            print(f"Unrealized P&L: ${total_gain:+,.2f} ({total_gain_pct:+.2f}%)")
+
+            # Entry-by-entry breakdown
+            print(f"\n{'-'*80}")
+            print("ENTRY HISTORY")
+            print(f"{'-'*80}")
+            print(f"{'#':<4} {'Date':<12} {'Price':>10} {'Shares':>12} {'Invested':>14} {'% of Cash':>11}")
+            print(f"{'-'*80}")
+
+            for i, entry in enumerate(self.entries, 1):
+                # Show what % this was (approximately 10%)
+                pct_marker = "~10%"
+                print(f"{i:<4} {str(entry['date']):<12} "
+                      f"${entry['price']:>9.2f} {entry['size']:>12.4f} "
+                      f"${entry['invested']:>13.2f} {pct_marker:>11}")
+
+            print(f"{'-'*80}")
+            print(f"{'TOTAL':<17} {'':<10} {total_shares:>12.4f} ${total_invested:>13.2f}")
+
+        print("="*80 + "\n")
+
+        # Plot portfolio breakdown
         plt.figure(figsize=(10, 6))
 
         plt.plot(self.dates, self.cash, label="Cash")
@@ -184,7 +264,8 @@ class TrendFollowingStrategy(bt.Strategy):
 
         plt.xlabel("Date")
         plt.ylabel("Value ($)")
-        plt.title("TrendFollowing Strategy - Portfolio Breakdown")
+        num_entries_text = f"{len(self.entries)} entries" if self.entries else "no entries"
+        plt.title(f"TrendFollowing (Entry Timing Only) - Portfolio Breakdown ({num_entries_text})")
         plt.legend()
         plt.grid(True)
 
