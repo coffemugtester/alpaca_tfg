@@ -2,7 +2,7 @@ import argparse
 
 from backtesting.runner import run_backtest
 from backtesting.validation import ValidationPipeline
-from config import CASH_DEFAULT, COMMISSION_DEFAULT, parse_date
+from config import CASH_DEFAULT, COMMISSION_DEFAULT, parse_date, calculate_months_between
 from strategies.dca import DollarCostAveraging
 from strategies.buy_and_hold import BuyAndHold
 
@@ -106,6 +106,15 @@ def main():
     else:
         # Single-strategy mode: run one strategy
         strategy_cls = get_strategy_class(args.strategy)
+
+        # Calculate strategy-specific parameters
+        strategy_params = {}
+        if args.strategy == "dca":
+            # DCA spreads initial cash evenly over all months
+            num_months = calculate_months_between(start, end)
+            monthly_invest = args.cash / num_months
+            strategy_params = {"monthly_invest": monthly_invest}
+
         run_backtest(
             symbol=args.symbol,
             start=start,
@@ -113,6 +122,7 @@ def main():
             strategy=strategy_cls,
             cash=args.cash,
             commission=args.commission,
+            strategy_params=strategy_params if strategy_params else None,
         )
 
 

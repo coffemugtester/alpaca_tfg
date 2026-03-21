@@ -26,6 +26,24 @@ def parse_date(date_str: str) -> datetime:
     return datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
 
 
+def calculate_months_between(start: datetime, end: datetime) -> int:
+    """
+    Calculate the number of months between two dates.
+
+    Args:
+        start: Start date
+        end: End date
+
+    Returns:
+        Number of months (rounded up to ensure full coverage)
+    """
+    months = (end.year - start.year) * 12 + (end.month - start.month)
+    # Round up to ensure we cover the full period
+    if months == 0:
+        months = 1
+    return months
+
+
 def get_alpaca_client() -> StockHistoricalDataClient:
     """
     Factory for an authenticated Alpaca historical data client.

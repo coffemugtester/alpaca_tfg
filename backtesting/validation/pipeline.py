@@ -12,6 +12,8 @@ matplotlib.use('Agg')  # Use non-interactive backend to suppress plot windows
 from backtesting.runner import run_backtest
 from data.alpaca_data import fetch_daily_bars
 from backtesting.data_adapter import df_to_bt_feed
+from config import calculate_months_between
+from strategies.dca import DollarCostAveraging
 from .stages.basic_metrics import BasicMetricsStage
 
 
@@ -134,8 +136,14 @@ class ValidationPipeline:
         # Add data feed
         cerebro.adddata(data_feed, name=self.symbol)
 
-        # Add strategy
-        cerebro.addstrategy(strategy_cls)
+        # Add strategy with parameters
+        # DCA spreads initial cash evenly over all months
+        if strategy_cls == DollarCostAveraging:
+            num_months = calculate_months_between(self.start, self.end)
+            monthly_invest = self.cash / num_months
+            cerebro.addstrategy(strategy_cls, monthly_invest=monthly_invest)
+        else:
+            cerebro.addstrategy(strategy_cls)
 
         # Set broker parameters
         cerebro.broker.setcash(self.cash)
@@ -212,7 +220,7 @@ class ValidationPipeline:
                 if calmar == float('inf'):
                     calmar_str = "Inf"
                 elif calmar is not None:
-                    calmar_str = f"{calmar:.2f}"
+                    calmar_str = f"{calmar:.3f}"
                 else:
                     calmar_str = "N/A"
 
