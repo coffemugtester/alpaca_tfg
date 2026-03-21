@@ -45,6 +45,7 @@ class TrendFollowingStrategy(bt.Strategy):
         self.entry_price = None
         self.entry_date = None
         self.entry_size = None
+        self.initial_cash = None  # Track starting cash
 
         # Series for portfolio metrics
         self.dates = []
@@ -95,6 +96,10 @@ class TrendFollowingStrategy(bt.Strategy):
         value = float(self.broker.getvalue())
         pos = self.getposition()
         pos_value = float(pos.size) * close
+
+        # Capture initial cash on first bar
+        if self.initial_cash is None:
+            self.initial_cash = cash
 
         # collect metrics
         self.dates.append(dt)
@@ -212,11 +217,31 @@ class TrendFollowingStrategy(bt.Strategy):
         print("(Buy and hold with timed entries - no exits)")
         print("="*80)
 
+        # Cash deployment stats
+        initial_cash = self.initial_cash if self.initial_cash is not None else 0
+        final_cash = float(self.broker.getcash())
+        final_value = float(self.broker.getvalue())
+
+        print(f"\nCASH DEPLOYMENT:")
+        print(f"  Initial Cash:        ${initial_cash:>13,.2f}")
+
         if not self.entries:
-            print("No entries made (likely insufficient data for indicator warm-up).")
+            print(f"  Final Cash:          ${final_cash:>13,.2f}")
+            print(f"  Total Invested:      ${0:>13,.2f}")
+            print(f"  Deployed:            {0:>12.1f}%")
+            print(f"  Remaining in Cash:   {100:>12.1f}%")
+            print("\nNo entries made (likely insufficient data for indicator warm-up).")
         else:
             num_entries = len(self.entries)
             total_invested = sum(e['invested'] for e in self.entries)
+            pct_deployed = (total_invested / initial_cash * 100) if initial_cash > 0 else 0
+            pct_remaining = (final_cash / initial_cash * 100) if initial_cash > 0 else 0
+
+            print(f"  Final Cash:          ${final_cash:>13,.2f}")
+            print(f"  Total Invested:      ${total_invested:>13,.2f}")
+            print(f"  Deployed:            {pct_deployed:>12.1f}%")
+            print(f"  Remaining in Cash:   {pct_remaining:>12.1f}%")
+
             avg_invested = total_invested / num_entries if num_entries > 0 else 0
             avg_price = sum(e['price'] for e in self.entries) / num_entries if num_entries > 0 else 0
 
@@ -227,14 +252,25 @@ class TrendFollowingStrategy(bt.Strategy):
             total_gain = current_value - total_invested
             total_gain_pct = (total_gain / total_invested * 100) if total_invested > 0 else 0
 
-            print(f"Total Entries: {num_entries}")
-            print(f"Total Invested: ${total_invested:,.2f}")
-            print(f"Average per Entry: ${avg_invested:,.2f}")
-            print(f"Average Entry Price: ${avg_price:.2f}")
-            print(f"\nTotal Shares Accumulated: {total_shares:.4f}")
-            print(f"Current Price: ${current_price:.2f}")
-            print(f"Current Position Value: ${current_value:,.2f}")
-            print(f"Unrealized P&L: ${total_gain:+,.2f} ({total_gain_pct:+.2f}%)")
+            print(f"\nENTRY STATISTICS:")
+            print(f"  Total Entries: {num_entries}")
+            print(f"  Average per Entry: ${avg_invested:,.2f}")
+            print(f"  Average Entry Price: ${avg_price:.2f}")
+
+            print(f"\nPOSITION VALUE:")
+            print(f"  Total Shares Accumulated: {total_shares:.4f}")
+            print(f"  Current Price: ${current_price:.2f}")
+            print(f"  Current Position Value: ${current_value:,.2f}")
+            print(f"  Unrealized P&L: ${total_gain:+,.2f} ({total_gain_pct:+.2f}%)")
+
+            print(f"\nPORTFOLIO BREAKDOWN:")
+            print(f"  Cash:     ${final_cash:>13,.2f}  ({final_cash/final_value*100:>5.1f}%)")
+            print(f"  Position: ${current_value:>13,.2f}  ({current_value/final_value*100:>5.1f}%)")
+            print(f"  Total:    ${final_value:>13,.2f}")
+
+            # Compare to Buy & Hold deployment
+            print(f"\n  Note: Buy & Hold deploys ~99.5% on day 1")
+            print(f"        TrendFollowing deployed {pct_deployed:.1f}% over {num_entries} entries")
 
             # Entry-by-entry breakdown
             print(f"\n{'-'*80}")
