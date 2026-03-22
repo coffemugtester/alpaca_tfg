@@ -15,6 +15,7 @@ from backtesting.data_adapter import df_to_bt_feed
 from config import calculate_months_between
 from strategies.dca import DollarCostAveraging
 from strategies.trendfollow import TrendFollowingStrategy
+from strategies.meanreversion import MeanReversionStrategy
 from .stages.basic_metrics import BasicMetricsStage
 
 
@@ -145,6 +146,9 @@ class ValidationPipeline:
             cerebro.addstrategy(strategy_cls, monthly_invest=monthly_invest)
         # TrendFollowing: suppress trade logs in comparison mode
         elif strategy_cls == TrendFollowingStrategy:
+            cerebro.addstrategy(strategy_cls, printlog=False)
+        # MeanReversion: suppress trade logs in comparison mode
+        elif strategy_cls == MeanReversionStrategy:
             cerebro.addstrategy(strategy_cls, printlog=False)
         else:
             cerebro.addstrategy(strategy_cls)

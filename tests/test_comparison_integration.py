@@ -4,13 +4,13 @@ import subprocess
 import sys
 
 
-def test_comparison_mode_three_strategies():
+def test_comparison_mode_all_strategies():
     """
-    Integration test: --compare flag runs all 3 strategies (DCA, Buy & Hold, TrendFollowing)
+    Integration test: --compare flag runs all strategies (DCA, Buy & Hold, TrendFollowing, MeanReversion)
     and produces clean output without log spam.
 
     Verifies:
-    1. All 3 strategies appear in comparison table
+    1. All strategies appear in comparison table
     2. Table header is present ("STRATEGY COMPARISON")
     3. No trade log spam (no "BUY SIGNAL" or "SELL SIGNAL" messages)
     4. Comparison table is readable (not buried in logs)
@@ -46,17 +46,21 @@ def test_comparison_mode_three_strategies():
     assert "STRATEGY COMPARISON" in stdout, \
         "Expected comparison table header in output"
 
-    # Verify all 3 strategies appear in table
+    # Verify all strategies appear in table
     assert "DCA" in stdout, "Expected DCA strategy in comparison table"
     assert "Buy & Hold" in stdout, "Expected Buy & Hold strategy in comparison table"
     assert "TrendFollowing" in stdout or "Trend" in stdout, \
         "Expected TrendFollowing strategy in comparison table"
+    assert "MeanReversion" in stdout or "Mean" in stdout, \
+        "Expected MeanReversion strategy in comparison table"
 
-    # Verify NO trade log spam from TrendFollowing (printlog should be suppressed)
+    # Verify NO trade log spam from TrendFollowing or MeanReversion (printlog should be suppressed)
     assert "BUY SIGNAL" not in stdout, \
-        "Found 'BUY SIGNAL' in output - TrendFollowing logs not suppressed in comparison mode"
+        "Found 'BUY SIGNAL' in output - Strategy logs not suppressed in comparison mode"
     assert "SELL SIGNAL" not in stdout, \
-        "Found 'SELL SIGNAL' in output - TrendFollowing logs not suppressed in comparison mode"
+        "Found 'SELL SIGNAL' in output - Strategy logs not suppressed in comparison mode"
+    assert "BUY (MEAN REVERSION)" not in stdout, \
+        "Found 'BUY (MEAN REVERSION)' in output - MeanReversion logs not suppressed in comparison mode"
 
     # Verify table metrics columns are present
     assert "CAGR" in stdout or "CAGR %" in stdout, "Expected CAGR column"
@@ -118,11 +122,11 @@ def test_comparison_mode_short_period_insufficient_data():
 
 if __name__ == '__main__':
     # Simple test runner until pytest is bootstrapped
-    print("Running test_comparison_mode_three_strategies...")
+    print("Running test_comparison_mode_all_strategies...")
     print("(This test requires Alpaca API credentials and internet connection)\n")
 
     try:
-        test_comparison_mode_three_strategies()
+        test_comparison_mode_all_strategies()
     except AssertionError as e:
         print(f"✗ FAIL: {e}\n")
         sys.exit(1)

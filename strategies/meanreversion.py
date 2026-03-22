@@ -4,29 +4,26 @@ import backtrader as bt
 import matplotlib.pyplot as plt
 
 
-class TrendFollowingStrategy(bt.Strategy):
+class MeanReversionStrategy(bt.Strategy):
     """
-    Entry-timing strategy with monthly capital budgeting:
+    Mean reversion strategy (buy-the-dip within an uptrend):
     - Trend filter: short SMA > long SMA and price > long SMA
-    - Momentum confirmation: MACD > signal
-    - Strength filter: RSI within a healthy range
-    - Entry trigger: breakout above upper Bollinger Band
-
-    Capital deployment logic:
+    - Pullback detection: RSI weakens and/or price touches lower Bollinger Band
+    - Rebound confirmation: MACD crosses above signal after pullback
     - Max one entry per month
-    - Total deployable capital is capped at 99.5% of initial cash
-    - Deployable capital is split into monthly budget slices
-    - If no entry is made in a given month, that month's slice rolls into a carry bucket
-    - If a signal appears, the strategy invests the available bucket
-    - No exits: positions are held permanently
+    - Monthly capital budget with carry-over bucket
+    - NEVER sells - holds positions forever
+
+    This strategy tests:
+    "Can I improve long-term accumulation by buying pullbacks inside an uptrend,
+    instead of buying breakouts?"
     """
 
     params = dict(
         sma_fast=50,
         sma_slow=200,
         rsi_period=14,
-        rsi_min=50,
-        rsi_max=70,
+        rsi_pullback=45,  # pullback threshold
         bb_period=20,
         bb_devfactor=2.0,
         macd_fast=12,
@@ -55,13 +52,17 @@ class TrendFollowingStrategy(bt.Strategy):
         self.entries = []
 
         # Monthly budgeting state
-        self.current_month_key = None  # (year, month)
-        self.last_entry_month_key = None  # (year, month)
-        self.deployable_total = None  # initial_cash * max_deploy
-        self.monthly_slice = None  # deployable_total / number_of_months
-        self.budget_bucket = 0.0  # accumulated unused monthly budget
-        self.total_budget_released = 0.0  # cumulative released budget
-        self.total_invested = 0.0  # cumulative actual invested
+        self.current_month_key = None
+        self.last_entry_month_key = None
+        self.deployable_total = None
+        self.monthly_slice = None
+        self.budget_bucket = 0.0
+        self.total_budget_released = 0.0
+        self.total_invested = 0.0
+
+        # Pullback / rebound state
+        self.pullback_armed = False
+        self.pullback_arm_date = None
 
         # Indicators
         self.sma_fast = bt.indicators.SimpleMovingAverage(
@@ -80,13 +81,13 @@ class TrendFollowingStrategy(bt.Strategy):
             period_signal=self.p.macd_signal,
         )
 
+        self.macd_cross = bt.indicators.CrossOver(self.macd.macd, self.macd.signal)
+
         self.bbands = bt.indicators.BollingerBands(
             self.data.close,
             period=self.p.bb_period,
             devfactor=self.p.bb_devfactor,
         )
-
-        self.macd_cross = bt.indicators.CrossOver(self.macd.macd, self.macd.signal)
 
     def log(self, txt: str) -> None:
         if self.p.printlog:
@@ -157,22 +158,49 @@ class TrendFollowingStrategy(bt.Strategy):
         self._release_monthly_budget_if_needed(dt)
 
         # =========================
-        # ENTRY CONDITIONS
+        # TREND FILTER
         # =========================
         trend_ok = close > self.sma_slow[0] and self.sma_fast[0] > self.sma_slow[0]
-        momentum_ok = self.macd.macd[0] > self.macd.signal[0]
-        rsi_ok = self.p.rsi_min <= self.rsi[0] <= self.p.rsi_max
-        breakout_ok = close > self.bbands.top[0]
 
-        signal_ok = trend_ok and momentum_ok and rsi_ok and breakout_ok
+        # =========================
+        # PULLBACK DETECTION
+        # =========================
+        rsi_pullback = self.rsi[0] < self.p.rsi_pullback
+        lower_band_touch = close <= self.bbands.bot[0]
+
+        pullback_now = trend_ok and (rsi_pullback or lower_band_touch)
+
+        if pullback_now and not self.pullback_armed:
+            self.pullback_armed = True
+            self.pullback_arm_date = dt
+            self.log(
+                f"PULLBACK ARMED | Close: {close:.2f} | "
+                f"RSI: {self.rsi[0]:.2f} | "
+                f"BB Bot: {self.bbands.bot[0]:.2f}"
+            )
+
+        # If trend is lost, disarm setup
+        if self.pullback_armed and not trend_ok:
+            self.pullback_armed = False
+            self.pullback_arm_date = None
+            self.log("PULLBACK DISARMED | Trend lost")
+
+        # =========================
+        # REBOUND CONFIRMATION
+        # =========================
+        rebound_now = self.macd_cross[0] > 0
+
         month_key = (dt.year, dt.month)
         already_entered_this_month = self.last_entry_month_key == month_key
 
-        if signal_ok and not already_entered_this_month:
-            # Never invest beyond:
-            # 1) accumulated monthly bucket
-            # 2) remaining allowed deployment
-            # 3) available cash
+        signal_ok = (
+            trend_ok
+            and self.pullback_armed
+            and rebound_now
+            and not already_entered_this_month
+        )
+
+        if signal_ok:
             remaining_deployable = max(0.0, self.deployable_total - self.total_invested)
             invest = min(self.budget_bucket, remaining_deployable, cash)
 
@@ -191,7 +219,8 @@ class TrendFollowingStrategy(bt.Strategy):
                         f"SMA{self.p.sma_fast}: {self.sma_fast[0]:.2f} | "
                         f"SMA{self.p.sma_slow}: {self.sma_slow[0]:.2f} | "
                         f"RSI: {self.rsi[0]:.2f} | "
-                        f"MACD: {self.macd.macd[0]:.4f} > Signal: {self.macd.signal[0]:.4f}"
+                        f"MACD Cross: {self.macd_cross[0]:.0f} | "
+                        f"Armed since: {self.pullback_arm_date}"
                     )
                     self.order = self.buy(size=size)
 
@@ -229,13 +258,17 @@ class TrendFollowingStrategy(bt.Strategy):
                 self.budget_bucket = max(0.0, self.budget_bucket - invested)
                 self.last_entry_month_key = (entry_date.year, entry_date.month)
 
+                # reset pullback state after successful entry
+                self.pullback_armed = False
+                self.pullback_arm_date = None
+
         self.order = None
 
     def stop(self) -> None:
         """Print entry summary and plot portfolio breakdown at end of backtest."""
         print("\n" + "=" * 80)
-        print("TRENDFOLLOWING STRATEGY - ENTRY TIMING SUMMARY")
-        print("(One entry max per month, rolling budget, no exits)")
+        print("MEAN REVERSION STRATEGY - ENTRY TIMING SUMMARY")
+        print("(Buy pullbacks in uptrend, one entry max per month, no exits)")
         print("=" * 80)
 
         initial_cash = self.initial_cash if self.initial_cash is not None else 0.0
@@ -260,7 +293,9 @@ class TrendFollowingStrategy(bt.Strategy):
             print(f"  Total Invested:      ${0:>13,.2f}")
             print(f"  Deployed:            {0:>12.1f}%")
             print(f"  Remaining in Cash:   {100:>12.1f}%")
-            print("\nNo entries made (likely no signals after warm-up).")
+            print(
+                "\nNo entries made (likely no pullback+rebound signals after warm-up)."
+            )
         else:
             num_entries = len(self.entries)
             total_invested = sum(e["invested"] for e in self.entries)
@@ -342,10 +377,12 @@ class TrendFollowingStrategy(bt.Strategy):
             f"{len(self.entries)} entries" if self.entries else "no entries"
         )
         plt.title(
-            f"TrendFollowing (Monthly Budgeted Entries) - Portfolio Breakdown ({num_entries_text})"
+            f"MeanReversion (Monthly Budgeted Entries) - Portfolio Breakdown ({num_entries_text})"
         )
         plt.legend()
         plt.grid(True)
 
         plt.tight_layout()
         plt.show()
+        # plt.savefig("reports/meanreversion_portfolio.png")
+        # plt.close()

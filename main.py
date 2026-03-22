@@ -6,6 +6,7 @@ from config import CASH_DEFAULT, COMMISSION_DEFAULT, parse_date, calculate_month
 from strategies.dca import DollarCostAveraging
 from strategies.buy_and_hold import BuyAndHold
 from strategies.trendfollow import TrendFollowingStrategy
+from strategies.meanreversion import MeanReversionStrategy
 
 
 # Canonical strategy registry - single source of truth
@@ -14,6 +15,7 @@ STRATEGY_REGISTRY = {
     "dca": ("DCA", DollarCostAveraging),
     "bnh": ("Buy & Hold", BuyAndHold),
     "trendfollowing": ("TrendFollowing", TrendFollowingStrategy),
+    "meanreversion": ("MeanReversion", MeanReversionStrategy),
 }
 
 
