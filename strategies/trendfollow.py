@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 class TrendFollowingStrategy(bt.Strategy):
     """
-    Entry-timing strategy with monthly capital budgeting:
+    Entry-timing strategy with dynamic monthly capital redistribution:
     - Trend filter: short SMA > long SMA and price > long SMA
     - Momentum confirmation: MACD > signal
     - Strength filter: RSI within a healthy range
@@ -15,9 +15,7 @@ class TrendFollowingStrategy(bt.Strategy):
     Capital deployment logic:
     - Max one entry per month
     - Total deployable capital is capped at 99.5% of initial cash
-    - Deployable capital is split into monthly budget slices
-    - If no entry is made in a given month, that month's slice rolls into a carry bucket
-    - If a signal appears, the strategy invests the available bucket
+    - Remaining deployable capital is dynamically redistributed across remaining months
     - No exits: positions are held permanently
     """
 
@@ -54,14 +52,14 @@ class TrendFollowingStrategy(bt.Strategy):
         self.trades = []
         self.entries = []
 
-        # Monthly budgeting state
-        self.current_month_key = None  # (year, month)
-        self.last_entry_month_key = None  # (year, month)
-        self.deployable_total = None  # initial_cash * max_deploy
-        self.monthly_slice = None  # deployable_total / number_of_months
-        self.budget_bucket = 0.0  # accumulated unused monthly budget
-        self.total_budget_released = 0.0  # cumulative released budget
-        self.total_invested = 0.0  # cumulative actual invested
+        # Dynamic monthly allocation state
+        self.current_month_key = None
+        self.last_entry_month_key = None
+        self.deployable_total = None
+        self.total_months = None
+        self.elapsed_months = 0
+        self.current_month_budget = 0.0
+        self.total_invested = 0.0
 
         # Indicators
         self.sma_fast = bt.indicators.SimpleMovingAverage(
@@ -96,7 +94,7 @@ class TrendFollowingStrategy(bt.Strategy):
     def _count_backtest_months(self) -> int:
         """
         Count distinct calendar months present in the loaded data feed.
-        This is used to split the deployable capital into monthly slices.
+        Used to dynamically redistribute remaining capital.
         """
         seen = set()
         for i in range(len(self.data)):
@@ -104,28 +102,27 @@ class TrendFollowingStrategy(bt.Strategy):
             seen.add((dt.year, dt.month))
         return max(1, len(seen))
 
-    def _release_monthly_budget_if_needed(self, dt) -> None:
+    def _recalculate_monthly_budget_if_needed(self, dt) -> None:
         """
-        Release exactly one monthly slice the first time we see a new month.
+        On the first bar of each new month, recalculate the budget for the month
+        as remaining deployable capital divided by remaining months.
         """
         month_key = (dt.year, dt.month)
 
         if self.current_month_key != month_key:
             self.current_month_key = month_key
+            self.elapsed_months += 1
 
-            remaining_budget_to_release = max(
-                0.0, self.deployable_total - self.total_budget_released
+            remaining_deployable = max(0.0, self.deployable_total - self.total_invested)
+            remaining_months = max(1, self.total_months - self.elapsed_months + 1)
+
+            self.current_month_budget = remaining_deployable / remaining_months
+
+            self.log(
+                f"NEW MONTH | Budget recalculated: ${self.current_month_budget:,.2f} | "
+                f"Remaining deployable: ${remaining_deployable:,.2f} | "
+                f"Remaining months: {remaining_months}"
             )
-
-            release = min(self.monthly_slice, remaining_budget_to_release)
-            self.budget_bucket += release
-            self.total_budget_released += release
-
-            if release > 0:
-                self.log(
-                    f"NEW MONTH | Released budget: ${release:,.2f} | "
-                    f"Bucket available: ${self.budget_bucket:,.2f}"
-                )
 
     def next(self) -> None:
         dt = self.datas[0].datetime.date(0)
@@ -136,12 +133,11 @@ class TrendFollowingStrategy(bt.Strategy):
         pos = self.getposition()
         pos_value = float(pos.size) * close
 
-        # Capture initial cash and initialize monthly budget model
+        # Capture initial cash and initialize dynamic budget model
         if self.initial_cash is None:
             self.initial_cash = cash
-            months = self._count_backtest_months()
+            self.total_months = self._count_backtest_months()
             self.deployable_total = self.initial_cash * self.p.max_deploy
-            self.monthly_slice = self.deployable_total / months
 
         # collect metrics
         self.dates.append(dt)
@@ -153,8 +149,8 @@ class TrendFollowingStrategy(bt.Strategy):
         if self.order:
             return
 
-        # release monthly budget once per new calendar month
-        self._release_monthly_budget_if_needed(dt)
+        # recalculate budget once per new calendar month
+        self._recalculate_monthly_budget_if_needed(dt)
 
         # =========================
         # ENTRY CONDITIONS
@@ -169,12 +165,8 @@ class TrendFollowingStrategy(bt.Strategy):
         already_entered_this_month = self.last_entry_month_key == month_key
 
         if signal_ok and not already_entered_this_month:
-            # Never invest beyond:
-            # 1) accumulated monthly bucket
-            # 2) remaining allowed deployment
-            # 3) available cash
             remaining_deployable = max(0.0, self.deployable_total - self.total_invested)
-            invest = min(self.budget_bucket, remaining_deployable, cash)
+            invest = min(self.current_month_budget, remaining_deployable, cash)
 
             if invest > 0:
                 size = invest / close
@@ -186,7 +178,7 @@ class TrendFollowingStrategy(bt.Strategy):
                 if size > 0 and invest > 0:
                     self.log(
                         f"BUY SIGNAL | Budget used: ${invest:,.2f} | "
-                        f"Bucket before buy: ${self.budget_bucket:,.2f} | "
+                        f"Monthly budget: ${self.current_month_budget:,.2f} | "
                         f"Close: {close:.2f} | "
                         f"SMA{self.p.sma_fast}: {self.sma_fast[0]:.2f} | "
                         f"SMA{self.p.sma_slow}: {self.sma_slow[0]:.2f} | "
@@ -224,9 +216,8 @@ class TrendFollowingStrategy(bt.Strategy):
                 self.entry_date = entry_date
                 self.entry_size = entry_size
 
-                # update monthly budgeting state
+                # update deployment state
                 self.total_invested += invested
-                self.budget_bucket = max(0.0, self.budget_bucket - invested)
                 self.last_entry_month_key = (entry_date.year, entry_date.month)
 
         self.order = None
@@ -235,7 +226,7 @@ class TrendFollowingStrategy(bt.Strategy):
         """Print entry summary and plot portfolio breakdown at end of backtest."""
         print("\n" + "=" * 80)
         print("TRENDFOLLOWING STRATEGY - ENTRY TIMING SUMMARY")
-        print("(One entry max per month, rolling budget, no exits)")
+        print("(One entry max per month, dynamic monthly redistribution, no exits)")
         print("=" * 80)
 
         initial_cash = self.initial_cash if self.initial_cash is not None else 0.0
@@ -245,14 +236,16 @@ class TrendFollowingStrategy(bt.Strategy):
         deployable_total = (
             self.deployable_total if self.deployable_total is not None else 0.0
         )
-        monthly_slice = self.monthly_slice if self.monthly_slice is not None else 0.0
+        total_months = self.total_months if self.total_months is not None else 0
+        remaining_deployable = max(0.0, deployable_total - self.total_invested)
 
         print(f"\nCAPITAL BUDGET MODEL:")
         print(f"  Initial Cash:        ${initial_cash:>13,.2f}")
         print(f"  Max Deploy ({self.p.max_deploy:.3f}): ${deployable_total:>13,.2f}")
-        print(f"  Monthly Slice:       ${monthly_slice:>13,.2f}")
-        print(f"  Released Budget:     ${self.total_budget_released:>13,.2f}")
-        print(f"  Remaining Bucket:    ${self.budget_bucket:>13,.2f}")
+        print(f"  Total Months:        {total_months:>13}")
+        print(f"  Months Elapsed:      {self.elapsed_months:>13}")
+        print(f"  Last Month Budget:   ${self.current_month_budget:>13,.2f}")
+        print(f"  Remaining Deployable:${remaining_deployable:>13,.2f}")
 
         if not self.entries:
             print(f"\nRESULT:")
@@ -342,7 +335,7 @@ class TrendFollowingStrategy(bt.Strategy):
             f"{len(self.entries)} entries" if self.entries else "no entries"
         )
         plt.title(
-            f"TrendFollowing (Monthly Budgeted Entries) - Portfolio Breakdown ({num_entries_text})"
+            f"TrendFollowing (Dynamic Monthly Redistribution) - Portfolio Breakdown ({num_entries_text})"
         )
         plt.legend()
         plt.grid(True)
