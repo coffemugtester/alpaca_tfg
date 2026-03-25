@@ -6,16 +6,21 @@ import matplotlib.pyplot as plt
 
 class DollarCostAveraging(bt.Strategy):
     """
-    DCA (sin aportaciones externas):
-    - Partes de un cash inicial (p.ej., 10.000$ en el broker).
-    - Cada mes inviertes 100$ del cash disponible (si lo hay).
-    - Mantienes la posición; no vendes.
-    - Registra cash, valor de posición y valor total en cada barra y lo grafica al final.
+    Dollar Cost Averaging strategy (without external contributions):
+    - Starts with initial cash (set via broker, e.g., $10,000)
+    - Spreads this cash evenly across all months in the backtest timeframe
+    - Invests the calculated monthly amount from available cash each month
+    - Holds positions; never sells
+    - Records cash, position value, and total value per bar, plots at end
+
+    Note: monthly_invest is automatically calculated as initial_cash / num_months
+    by the caller (main.py or ValidationPipeline). The default value is only
+    used if the strategy is run manually without this parameter.
     """
 
     params = dict(
-        monthly_invest=100.0,  # cuánto invertir cada mes desde el cash existente
-        allow_fractional=True,  # True para ETFs fraccionales (si tu broker/data lo soporta)
+        monthly_invest=100.0,  # default if not specified; typically overridden
+        allow_fractional=True,  # True for fractional ETFs (if broker/data supports)
     )
 
     def __init__(self) -> None:
@@ -85,7 +90,8 @@ class DollarCostAveraging(bt.Strategy):
 
         plt.xlabel("Date")
         plt.ylabel("Value ($)")
-        plt.title("DCA (100$/month from initial cash) - Portfolio Breakdown")
+        monthly_invest_display = f"${self.p.monthly_invest:.2f}"
+        plt.title(f"DCA ({monthly_invest_display}/month) - Portfolio Breakdown")
         plt.legend()
         plt.grid(True)
 

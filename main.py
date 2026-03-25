@@ -1,10 +1,22 @@
-from datetime import datetime, timezone
 import argparse
 
 from backtesting.runner import run_backtest
-from config import CASH_DEFAULT, COMMISSION_DEFAULT
+from backtesting.validation import ValidationPipeline
+from config import CASH_DEFAULT, COMMISSION_DEFAULT, parse_date, calculate_months_between
 from strategies.dca import DollarCostAveraging
 from strategies.buy_and_hold import BuyAndHold
+from strategies.trendfollow import TrendFollowingStrategy
+from strategies.meanreversion import MeanReversionStrategy
+
+
+# Canonical strategy registry - single source of truth
+# Maps CLI names (lowercase) to (display name, strategy class) tuples
+STRATEGY_REGISTRY = {
+    "dca": ("DCA", DollarCostAveraging),
+    "bnh": ("Buy & Hold", BuyAndHold),
+    "trendfollowing": ("TrendFollowing", TrendFollowingStrategy),
+    "meanreversion": ("MeanReversion", MeanReversionStrategy),
+}
 
 
 def parse_args():
@@ -27,12 +39,19 @@ def parse_args():
         "--end", type=str, required=True, help="End date in YYYY-MM-DD format"
     )
 
+    # Strategy selection for single-strategy mode
     parser.add_argument(
         "--strategy",
         type=str,
-        required=True,
-        choices=["dca", "bnh"],
-        help="Strategy to run",
+        choices=list(STRATEGY_REGISTRY.keys()),
+        help="Strategy to run (single-strategy mode)",
+    )
+
+    # Comparison mode flag
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Compare all registered strategies (comparison mode)",
     )
 
     parser.add_argument(
@@ -49,37 +68,68 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_date(date_str: str) -> datetime:
-    return datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-
-
 def get_strategy_class(strategy_name: str):
-    strategy_map = {
-        "dca": DollarCostAveraging,
-        "bnh": BuyAndHold,
-    }
-    return strategy_map[strategy_name]
+    """Get a single strategy class by CLI name (e.g., 'dca' -> DollarCostAveraging)."""
+    _display_name, strategy_cls = STRATEGY_REGISTRY[strategy_name]
+    return strategy_cls
+
+
+def get_strategy_map():
+    """Get all registered strategies as {display_name: strategy_class} dict."""
+    return {display_name: strategy_cls for display_name, strategy_cls in STRATEGY_REGISTRY.values()}
 
 
 def main():
     args = parse_args()
 
+    # Validate arguments
+    if args.compare and args.strategy:
+        raise ValueError("Cannot use both --compare and --strategy. Choose one mode.")
+
+    if not args.compare and not args.strategy:
+        raise ValueError("Must specify either --strategy or --compare.")
+
+    # Parse dates
     start = parse_date(args.start)
     end = parse_date(args.end)
 
     if start >= end:
         raise ValueError("Start date must be earlier than end date.")
 
-    strategy_cls = get_strategy_class(args.strategy)
+    # Run in comparison mode or single-strategy mode
+    if args.compare:
+        # Comparison mode: run all strategies
+        strategies = get_strategy_map()
+        pipeline = ValidationPipeline(
+            strategies=strategies,
+            symbol=args.symbol,
+            start=start,
+            end=end,
+            cash=args.cash,
+            commission=args.commission,
+        )
+        pipeline.run_comparison()
+    else:
+        # Single-strategy mode: run one strategy
+        strategy_cls = get_strategy_class(args.strategy)
 
-    run_backtest(
-        symbol=args.symbol,
-        start=start,
-        end=end,
-        strategy=strategy_cls,
-        cash=args.cash,
-        commission=args.commission,
-    )
+        # Calculate strategy-specific parameters
+        strategy_params = {}
+        if args.strategy == "dca":
+            # DCA spreads initial cash evenly over all months
+            num_months = calculate_months_between(start, end)
+            monthly_invest = args.cash / num_months
+            strategy_params = {"monthly_invest": monthly_invest}
+
+        run_backtest(
+            symbol=args.symbol,
+            start=start,
+            end=end,
+            strategy=strategy_cls,
+            cash=args.cash,
+            commission=args.commission,
+            strategy_params=strategy_params if strategy_params else None,
+        )
 
 
 if __name__ == "__main__":

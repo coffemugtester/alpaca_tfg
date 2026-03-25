@@ -16,10 +16,14 @@ def run_backtest(
     strategy: Type[bt.Strategy],
     cash: float,
     commission: float,
+    strategy_params: dict | None = None,
 ) -> float:
     """
     Orchestrate a full backtest run: fetch data, prepare it, wire it into Backtrader,
     and return the final portfolio value.
+
+    Args:
+        strategy_params: Optional dict of parameters to pass to the strategy
     """
 
     df = fetch_daily_bars(symbol=symbol, start=start, end=end)
@@ -37,7 +41,10 @@ def run_backtest(
     cerebro = bt.Cerebro()
     cerebro.adddata(data_feed, name=symbol)
 
-    cerebro.addstrategy(strategy)
+    if strategy_params:
+        cerebro.addstrategy(strategy, **strategy_params)
+    else:
+        cerebro.addstrategy(strategy)
 
     cerebro.broker.setcash(cash)
     cerebro.broker.setcommission(commission=commission)
