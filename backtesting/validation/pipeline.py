@@ -7,7 +7,6 @@ from typing import Type
 
 import backtrader as bt
 import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend to suppress plot windows
 
 from backtesting.runner import run_backtest
 from data.alpaca_data import fetch_daily_bars
@@ -63,6 +62,9 @@ class ValidationPipeline:
 
         This is the main entry point for the comparison workflow.
         """
+        # Suppress plots in comparison mode - use non-interactive backend
+        matplotlib.use('Agg')
+
         print(f"\nFetching data for {self.symbol} from {self.start.date()} to {self.end.date()}...")
 
         # Fetch data once, reuse across all strategies (Perf A decision)
