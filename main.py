@@ -1,5 +1,7 @@
 import argparse
 
+import matplotlib
+
 from backtesting.runner import run_backtest
 from backtesting.validation import ValidationPipeline
 from config import CASH_DEFAULT, COMMISSION_DEFAULT, parse_date, calculate_months_between
@@ -54,6 +56,13 @@ def parse_args():
         help="Compare all registered strategies (comparison mode)",
     )
 
+    # Plot display flag (single-strategy mode only)
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Show matplotlib plot at end (single-strategy mode only)",
+    )
+
     parser.add_argument(
         "--cash", type=float, default=CASH_DEFAULT, help="Initial cash for the backtest"
     )
@@ -89,6 +98,9 @@ def main():
     if not args.compare and not args.strategy:
         raise ValueError("Must specify either --strategy or --compare.")
 
+    if args.plot and args.compare:
+        raise ValueError("--plot flag only works in single-strategy mode, not with --compare.")
+
     # Parse dates
     start = parse_date(args.start)
     end = parse_date(args.end)
@@ -111,6 +123,13 @@ def main():
         pipeline.run_comparison()
     else:
         # Single-strategy mode: run one strategy
+
+        # Set matplotlib backend based on --plot flag
+        if not args.plot:
+            # Suppress plots if --plot not specified
+            matplotlib.use('Agg')
+        # else: leave backend as default (interactive) to show plots
+
         strategy_cls = get_strategy_class(args.strategy)
 
         # Calculate strategy-specific parameters
