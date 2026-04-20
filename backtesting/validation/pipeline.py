@@ -37,6 +37,7 @@ class ValidationPipeline:
         end: datetime,
         cash: float,
         commission: float,
+        slippage: float,
     ):
         """
         Initialize the validation pipeline.
@@ -48,6 +49,7 @@ class ValidationPipeline:
             end: End date
             cash: Initial cash
             commission: Commission rate
+            slippage: Slippage percentage
         """
         self.strategies = strategies
         self.symbol = symbol
@@ -55,6 +57,7 @@ class ValidationPipeline:
         self.end = end
         self.cash = cash
         self.commission = commission
+        self.slippage = slippage
 
     def run_comparison(self) -> None:
         """
@@ -135,7 +138,7 @@ class ValidationPipeline:
             Dict with strategy results including cerebro instance
         """
         # Create Cerebro instance
-        cerebro = bt.Cerebro()
+        cerebro = bt.Cerebro(cheat_on_open=True)  # Enable next_open() callbacks
 
         # Add data feed
         cerebro.adddata(data_feed, name=self.symbol)
@@ -158,6 +161,7 @@ class ValidationPipeline:
         # Set broker parameters
         cerebro.broker.setcash(self.cash)
         cerebro.broker.setcommission(commission=self.commission)
+        cerebro.broker.set_slippage_perc(self.slippage)
 
         # Attach analyzers (Issue 1: TimeReturn for equity curve, Issue 2: Pipeline attaches)
         cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe', riskfreerate=0.0)

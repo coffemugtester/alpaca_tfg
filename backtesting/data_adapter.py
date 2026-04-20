@@ -23,5 +23,11 @@ def df_to_bt_feed(df: pd.DataFrame) -> bt.feeds.PandasData:
     if getattr(index, "tz", None) is not None:
         df_bt.index = index.tz_convert(None)
 
-    return bt.feeds.PandasData(dataname=df_bt)
+    # Add explicit date parameters to ensure proper data feed configuration
+    # This is required for next_open() callbacks to work correctly with COC mode
+    return bt.feeds.PandasData(
+        dataname=df_bt,
+        fromdate=df_bt.index[0],
+        todate=df_bt.index[-1],
+    )
 
