@@ -4,7 +4,7 @@ import matplotlib
 
 from backtesting.runner import run_backtest
 from backtesting.validation import ValidationPipeline
-from config import CASH_DEFAULT, COMMISSION_DEFAULT, parse_date, calculate_months_between
+from config import CASH_DEFAULT, COMMISSION_DEFAULT, SLIPPAGE_DEFAULT, parse_date, calculate_months_between
 from strategies.dca import DollarCostAveraging
 from strategies.buy_and_hold import BuyAndHold
 from strategies.trendfollow import TrendFollowingStrategy
@@ -71,7 +71,14 @@ def parse_args():
         "--commission",
         type=float,
         default=COMMISSION_DEFAULT,
-        help="Commission rate",
+        help="Commission percentage (default: 0.02%%)",
+    )
+
+    parser.add_argument(
+        "--slippage",
+        type=float,
+        default=SLIPPAGE_DEFAULT,
+        help="Slippage percentage (default: 0.03%%)",
     )
 
     return parser.parse_args()
@@ -119,6 +126,7 @@ def main():
             end=end,
             cash=args.cash,
             commission=args.commission,
+            slippage=args.slippage,
         )
         pipeline.run_comparison()
     else:
@@ -147,6 +155,7 @@ def main():
             strategy=strategy_cls,
             cash=args.cash,
             commission=args.commission,
+            slippage=args.slippage,
             strategy_params=strategy_params if strategy_params else None,
         )
 

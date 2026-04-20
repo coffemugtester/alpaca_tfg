@@ -10,7 +10,8 @@ from local_settings import alpaca_paper
 
 # Public defaults for backtests
 CASH_DEFAULT: Final[float] = 10_000.0
-COMMISSION_DEFAULT: Final[float] = 0.0
+COMMISSION_DEFAULT: Final[float] = 0.0002  # 0.02% - bid-ask spread cost
+SLIPPAGE_DEFAULT: Final[float] = 0.0003  # 0.03% - execution/market impact cost
 
 
 def parse_date(date_str: str) -> datetime:

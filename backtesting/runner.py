@@ -16,6 +16,7 @@ def run_backtest(
     strategy: Type[bt.Strategy],
     cash: float,
     commission: float,
+    slippage: float,
     strategy_params: dict | None = None,
 ) -> float:
     """
@@ -24,6 +25,7 @@ def run_backtest(
 
     Args:
         strategy_params: Optional dict of parameters to pass to the strategy
+        slippage: Slippage percentage (e.g., 0.0005 for 0.05%)
     """
 
     df = fetch_daily_bars(symbol=symbol, start=start, end=end)
@@ -38,7 +40,7 @@ def run_backtest(
     print(data_feed.p.dataname.head())
     print("tz:", data_feed.p.dataname.index.tz)
 
-    cerebro = bt.Cerebro()
+    cerebro = bt.Cerebro(cheat_on_open=True)  # Enable next_open() callbacks
     cerebro.adddata(data_feed, name=symbol)
 
     if strategy_params:
@@ -48,6 +50,7 @@ def run_backtest(
 
     cerebro.broker.setcash(cash)
     cerebro.broker.setcommission(commission=commission)
+    cerebro.broker.set_slippage_perc(slippage)
 
     print("Bars loaded:", len(data_feed.p.dataname))
     print("Starting value:", cerebro.broker.getvalue())
