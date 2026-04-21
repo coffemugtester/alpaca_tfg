@@ -2,6 +2,7 @@
 
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_comparison_mode_all_strategies():
@@ -66,6 +67,17 @@ def test_comparison_mode_all_strategies():
     assert "CAGR" in stdout or "CAGR %" in stdout, "Expected CAGR column"
     assert "Sharpe" in stdout, "Expected Sharpe column"
     assert "Max DD" in stdout or "Drawdown" in stdout, "Expected Max Drawdown column"
+    assert "Daily exposure/cash CSV saved to:" in stdout, \
+        "Expected CSV export confirmation message in output"
+
+    # Verify CSV file was written and has expected schema
+    csv_files = sorted(Path(".").glob("comparison_exposure_SPY_2020-01-01_2023-12-31_*.csv"))
+    assert csv_files, "Expected comparison exposure CSV file to be created"
+    csv_text = csv_files[-1].read_text(encoding="utf-8")
+    assert "date,strategy,portfolio_value,available_cash,exposure,cash_pct,exposure_pct" in csv_text, \
+        "Expected long-format CSV headers"
+    assert "DCA" in csv_text and "Buy & Hold" in csv_text, \
+        "Expected multiple strategy rows in CSV output"
 
     print("✓ Integration test passed: 3-strategy comparison produces clean output")
 
