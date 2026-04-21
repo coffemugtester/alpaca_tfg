@@ -9,6 +9,8 @@ from typing import Type
 
 import backtrader as bt
 import matplotlib
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 from backtesting.runner import run_backtest
 from data.alpaca_data import fetch_daily_bars
@@ -87,6 +89,14 @@ class ValidationPipeline:
         # Suppress plots in comparison mode - use non-interactive backend
         matplotlib.use("Agg")
 
+        # Ensure output directories exist
+        csv_dir = Path.cwd() / "csv_output"
+        charts_dir = Path.cwd() / "charts"
+        drawdown_charts_dir = Path.cwd() / "drawdown_charts"
+        csv_dir.mkdir(exist_ok=True)
+        charts_dir.mkdir(exist_ok=True)
+        drawdown_charts_dir.mkdir(exist_ok=True)
+
         print(
             f"\nFetching data for {self.symbol} from {self.start.date()} to {self.end.date()}..."
         )
@@ -153,8 +163,17 @@ class ValidationPipeline:
         # Display comparison table
         self._print_comparison_table(metrics_by_strategy)
 
+        # Generate shared timestamp for CSV and chart to enable easy matching
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
         # Export daily exposure/cash records for downstream analysis
-        self._export_daily_exposure_csv(strategy_results)
+        self._export_daily_exposure_csv(strategy_results, timestamp)
+
+        # Generate portfolio value chart
+        self._generate_portfolio_chart(strategy_results, timestamp)
+
+        # Generate drawdown chart
+        self._generate_drawdown_chart(strategy_results, timestamp)
 
     def _run_single_strategy(
         self,
@@ -354,7 +373,9 @@ class ValidationPipeline:
 
         return rows
 
-    def _export_daily_exposure_csv(self, strategy_results: list[dict]) -> None:
+    def _export_daily_exposure_csv(
+        self, strategy_results: list[dict], timestamp: str
+    ) -> None:
         """
         Export normalized long-format daily exposure/cash rows to CSV.
         """
@@ -377,12 +398,12 @@ class ValidationPipeline:
             print("WARNING: No exposure/cash rows were generated; skipping CSV export.")
             return
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = (
             f"comparison_exposure_{self.symbol}_"
             f"{self.start.date()}_{self.end.date()}_{timestamp}.csv"
         )
-        output_path = Path.cwd() / filename
+        csv_dir = Path.cwd() / "csv_output"
+        output_path = csv_dir / filename
 
         fieldnames = [
             "date",
@@ -404,4 +425,179 @@ class ValidationPipeline:
             skipped_list = ", ".join(skipped)
             print(
                 f"WARNING: CSV contains partial results. Skipped strategies: {skipped_list}"
+            )
+
+    def _generate_portfolio_chart(
+        self, strategy_results: list[dict], timestamp: str
+    ) -> None:
+        """
+        Generate chart showing portfolio value (exposure + cash) over time for all strategies.
+        """
+        # Collect data for each strategy
+        strategy_data = {}
+        skipped: list[str] = []
+
+        for result in strategy_results:
+            if "error" in result:
+                skipped.append(result["strategy_name"])
+                continue
+
+            try:
+                rows = self._extract_daily_exposure_rows(result)
+                strategy_name = result["strategy_name"]
+
+                # Convert date strings to datetime objects for proper date axis handling
+                from datetime import datetime as dt
+
+                dates = [dt.fromisoformat(row["date"]) for row in rows]
+                portfolio_values = [row["portfolio_value"] for row in rows]
+
+                strategy_data[strategy_name] = {
+                    "dates": dates,
+                    "portfolio_values": portfolio_values,
+                }
+            except Exception as exc:
+                strategy_name = result.get("strategy_name", "unknown")
+                skipped.append(strategy_name)
+                print(f"WARNING: Skipping chart data for {strategy_name}: {exc}")
+
+        if not strategy_data:
+            print("WARNING: No strategy data available; skipping chart generation.")
+            return
+
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        for strategy_name, data in strategy_data.items():
+            ax.plot(
+                data["dates"],
+                data["portfolio_values"],
+                label=strategy_name,
+                linewidth=2,
+            )
+
+        ax.set_xlabel("Fecha", fontsize=12)
+        ax.set_ylabel("Valor del Portafolio ($)", fontsize=12)
+        ax.set_title(
+            f"Valor del Portafolio en el Tiempo - {self.symbol}",
+            fontsize=14,
+            fontweight="bold",
+        )
+        ax.legend(loc="best", fontsize=10)
+        ax.grid(True, alpha=0.3)
+
+        # Set x-axis to show yearly ticks
+        ax.xaxis.set_major_locator(mdates.YearLocator())
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha="right")
+
+        plt.tight_layout()
+
+        # Save chart with matching naming convention
+        filename = (
+            f"comparison_portfolio_{self.symbol}_"
+            f"{self.start.date()}_{self.end.date()}_{timestamp}.png"
+        )
+        charts_dir = Path.cwd() / "charts"
+        output_path = charts_dir / filename
+
+        plt.savefig(output_path, dpi=150, bbox_inches="tight")
+        plt.close()
+
+        print(f"Portfolio value chart saved to: {output_path}")
+        if skipped:
+            skipped_list = ", ".join(skipped)
+            print(
+                f"WARNING: Chart contains partial results. Skipped strategies: {skipped_list}"
+            )
+
+    def _generate_drawdown_chart(
+        self, strategy_results: list[dict], timestamp: str
+    ) -> None:
+        """
+        Generate chart showing drawdown percentage from peak over time for all strategies.
+        """
+        # Collect data for each strategy
+        strategy_data = {}
+        skipped: list[str] = []
+
+        for result in strategy_results:
+            if "error" in result:
+                skipped.append(result["strategy_name"])
+                continue
+
+            try:
+                rows = self._extract_daily_exposure_rows(result)
+                strategy_name = result["strategy_name"]
+
+                # Convert date strings to datetime objects
+                from datetime import datetime as dt
+
+                dates = [dt.fromisoformat(row["date"]) for row in rows]
+                portfolio_values = [row["portfolio_value"] for row in rows]
+
+                # Calculate drawdown series: (peak - current) / peak * 100
+                drawdowns = []
+                peak = portfolio_values[0]
+                for value in portfolio_values:
+                    if value > peak:
+                        peak = value
+                    drawdown_pct = ((peak - value) / peak * 100) if peak > 0 else 0.0
+                    drawdowns.append(
+                        -drawdown_pct
+                    )  # Negative for display (drawdown goes down)
+
+                strategy_data[strategy_name] = {
+                    "dates": dates,
+                    "drawdowns": drawdowns,
+                }
+            except Exception as exc:
+                strategy_name = result.get("strategy_name", "unknown")
+                skipped.append(strategy_name)
+                print(
+                    f"WARNING: Skipping drawdown chart data for {strategy_name}: {exc}"
+                )
+
+        if not strategy_data:
+            print(
+                "WARNING: No strategy data available; skipping drawdown chart generation."
+            )
+            return
+
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        for strategy_name, data in strategy_data.items():
+            ax.plot(data["dates"], data["drawdowns"], label=strategy_name, linewidth=2)
+
+        ax.set_xlabel("Fecha", fontsize=12)
+        ax.set_ylabel("Drawdown (%)", fontsize=12)
+        ax.set_title(f"Drawdown - {self.symbol}", fontsize=14, fontweight="bold")
+        ax.legend(loc="best", fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.axhline(y=0, color="black", linestyle="-", linewidth=0.8, alpha=0.5)
+
+        # Set x-axis to show yearly ticks
+        ax.xaxis.set_major_locator(mdates.YearLocator())
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha="right")
+
+        plt.tight_layout()
+
+        # Save chart with matching naming convention
+        filename = (
+            f"comparison_drawdown_{self.symbol}_"
+            f"{self.start.date()}_{self.end.date()}_{timestamp}.png"
+        )
+        drawdown_charts_dir = Path.cwd() / "drawdown_charts"
+        output_path = drawdown_charts_dir / filename
+
+        plt.savefig(output_path, dpi=150, bbox_inches="tight")
+        plt.close()
+
+        print(f"Drawdown chart saved to: {output_path}")
+        if skipped:
+            skipped_list = ", ".join(skipped)
+            print(
+                f"WARNING: Drawdown chart contains partial results. Skipped strategies: {skipped_list}"
             )
