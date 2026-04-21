@@ -85,9 +85,11 @@ class ValidationPipeline:
         This is the main entry point for the comparison workflow.
         """
         # Suppress plots in comparison mode - use non-interactive backend
-        matplotlib.use('Agg')
+        matplotlib.use("Agg")
 
-        print(f"\nFetching data for {self.symbol} from {self.start.date()} to {self.end.date()}...")
+        print(
+            f"\nFetching data for {self.symbol} from {self.start.date()} to {self.end.date()}..."
+        )
 
         # Fetch data once, reuse across all strategies (Perf A decision)
         try:
@@ -97,7 +99,9 @@ class ValidationPipeline:
             return
 
         if df is None or len(df) == 0:
-            print(f"ERROR: No data returned for {self.symbol} in the specified date range.")
+            print(
+                f"ERROR: No data returned for {self.symbol} in the specified date range."
+            )
             return
 
         print(f"Loaded {len(df)} bars.\n")
@@ -110,6 +114,12 @@ class ValidationPipeline:
         for strategy_name, strategy_cls in self.strategies.items():
             print(f"Running {strategy_name}...")
 
+            if strategy_name == "TrendFollowing":
+                strategy_name = "Seguimiento"
+
+            if strategy_name == "MeanReversion":
+                strategy_name = "Reversión"
+
             try:
                 result = self._run_single_strategy(
                     strategy_cls=strategy_cls,
@@ -120,21 +130,25 @@ class ValidationPipeline:
             except Exception as e:
                 print(f"  ERROR: Strategy {strategy_name} crashed: {e}")
                 # Continue with other strategies (partial results)
-                strategy_results.append({
-                    'strategy_name': strategy_name,
-                    'error': str(e),
-                })
+                strategy_results.append(
+                    {
+                        "strategy_name": strategy_name,
+                        "error": str(e),
+                    }
+                )
 
         # Extract metrics using BasicMetricsStage
         metrics_stage = BasicMetricsStage()
         # Filter out errored strategies before passing to metrics stage
-        valid_results = [r for r in strategy_results if 'error' not in r]
+        valid_results = [r for r in strategy_results if "error" not in r]
         metrics_by_strategy = metrics_stage.run(valid_results)
 
         # Merge error info for strategies that crashed
         for result in strategy_results:
-            if 'error' in result:
-                metrics_by_strategy[result['strategy_name']] = {'error': result['error']}
+            if "error" in result:
+                metrics_by_strategy[result["strategy_name"]] = {
+                    "error": result["error"]
+                }
 
         # Display comparison table
         self._print_comparison_table(metrics_by_strategy)
@@ -186,11 +200,11 @@ class ValidationPipeline:
         cerebro.broker.set_slippage_perc(self.slippage)
 
         # Attach analyzers (Issue 1: TimeReturn for equity curve, Issue 2: Pipeline attaches)
-        cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe', riskfreerate=0.0)
-        cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
-        cerebro.addanalyzer(bt.analyzers.TimeReturn, _name='timereturn')
+        cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name="sharpe", riskfreerate=0.0)
+        cerebro.addanalyzer(bt.analyzers.DrawDown, _name="drawdown")
+        cerebro.addanalyzer(bt.analyzers.TimeReturn, _name="timereturn")
         # Daily account snapshots for CSV export (Backtrader-version agnostic).
-        cerebro.addanalyzer(_DailyAccountSnapshot, _name='daily_account')
+        cerebro.addanalyzer(_DailyAccountSnapshot, _name="daily_account")
 
         # Run backtest (Issue 7: verbose=False, plot=False for comparison mode)
         # Note: We're not using the modified run_backtest() here because we need
@@ -200,12 +214,12 @@ class ValidationPipeline:
         final_value = float(cerebro.broker.getvalue())
 
         return {
-            'strategy_name': strategy_name,
-            'cerebro': cerebro,
-            'final_value': final_value,
-            'start': self.start,
-            'end': self.end,
-            'initial_cash': self.cash,
+            "strategy_name": strategy_name,
+            "cerebro": cerebro,
+            "final_value": final_value,
+            "start": self.start,
+            "end": self.end,
+            "initial_cash": self.cash,
         }
 
     def _print_comparison_table(self, metrics_by_strategy: dict) -> None:
@@ -215,9 +229,9 @@ class ValidationPipeline:
         Args:
             metrics_by_strategy: Dict mapping strategy name to metrics dict
         """
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("STRATEGY COMPARISON")
-        print("="*80)
+        print("=" * 80)
 
         if not metrics_by_strategy:
             print("No results to display.")
@@ -234,28 +248,28 @@ class ValidationPipeline:
             f"{'Calmar':>7}"
         )
         print(header)
-        print("-"*80)
+        print("-" * 80)
 
         # Table rows
         for strategy_name, metrics in metrics_by_strategy.items():
-            if 'error' in metrics:
+            if "error" in metrics:
                 # Show error row
                 row = f"{strategy_name:<20} ERROR: {metrics['error']}"
                 print(row)
             else:
                 # Format metrics
-                final_value = metrics.get('final_value', 0)
-                total_return = metrics.get('total_return', 0) * 100
-                cagr = metrics.get('cagr', 0) * 100
-                sharpe = metrics.get('sharpe_ratio', None)
-                max_dd = metrics.get('max_drawdown', None)
-                calmar = metrics.get('calmar_ratio', None)
+                final_value = metrics.get("final_value", 0)
+                total_return = metrics.get("total_return", 0) * 100
+                cagr = metrics.get("cagr", 0) * 100
+                sharpe = metrics.get("sharpe_ratio", None)
+                max_dd = metrics.get("max_drawdown", None)
+                calmar = metrics.get("calmar_ratio", None)
 
                 # Handle None values
                 sharpe_str = f"{sharpe:.2f}" if sharpe is not None else "N/A"
                 max_dd_str = f"{max_dd*100:.2f}" if max_dd is not None else "N/A"
 
-                if calmar == float('inf'):
+                if calmar == float("inf"):
                     calmar_str = "Inf"
                 elif calmar is not None:
                     calmar_str = f"{calmar:.3f}"
@@ -273,21 +287,21 @@ class ValidationPipeline:
                 )
                 print(row)
 
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
     def _extract_daily_exposure_rows(self, result: dict) -> list[dict]:
         """
         Extract normalized daily exposure/cash rows for a single strategy result.
         """
-        strategy_name = result['strategy_name']
-        initial_cash = float(result['initial_cash'])
-        strats = result['cerebro'].runstrats
+        strategy_name = result["strategy_name"]
+        initial_cash = float(result["initial_cash"])
+        strats = result["cerebro"].runstrats
         if not strats or len(strats) == 0:
             raise ValueError(f"No strategy output found for {strategy_name}")
 
         strat = strats[0][0]
 
-        daily_account_analyzer = getattr(strat.analyzers, 'daily_account', None)
+        daily_account_analyzer = getattr(strat.analyzers, "daily_account", None)
 
         if daily_account_analyzer is None:
             raise ValueError(f"Missing analyzers for {strategy_name}")
@@ -321,7 +335,11 @@ class ValidationPipeline:
             cash_pct = min(max(cash_pct, 0.0), 1.0)
             exposure_pct = min(max(exposure_pct, 0.0), 1.0)
 
-            date_str = date_key.date().isoformat() if hasattr(date_key, "date") else str(date_key)
+            date_str = (
+                date_key.date().isoformat()
+                if hasattr(date_key, "date")
+                else str(date_key)
+            )
             rows.append(
                 {
                     "date": date_str,
@@ -344,14 +362,14 @@ class ValidationPipeline:
         skipped: list[str] = []
 
         for result in strategy_results:
-            if 'error' in result:
-                skipped.append(result['strategy_name'])
+            if "error" in result:
+                skipped.append(result["strategy_name"])
                 continue
 
             try:
                 all_rows.extend(self._extract_daily_exposure_rows(result))
             except Exception as exc:
-                strategy_name = result.get('strategy_name', 'unknown')
+                strategy_name = result.get("strategy_name", "unknown")
                 skipped.append(strategy_name)
                 print(f"WARNING: Skipping CSV export rows for {strategy_name}: {exc}")
 
@@ -384,4 +402,6 @@ class ValidationPipeline:
         print(f"Daily exposure/cash CSV saved to: {output_path}")
         if skipped:
             skipped_list = ", ".join(skipped)
-            print(f"WARNING: CSV contains partial results. Skipped strategies: {skipped_list}")
+            print(
+                f"WARNING: CSV contains partial results. Skipped strategies: {skipped_list}"
+            )
