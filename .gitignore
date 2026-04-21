@@ -4,3 +4,4 @@ local_settings.py
 __pycache__/
 .mypy_cache
 .devcontainer
+comparison_exposure*

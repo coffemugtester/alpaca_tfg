@@ -34,11 +34,17 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--start", type=str, required=True, help="Start date in YYYY-MM-DD format"
+        "--start",
+        type=str,
+        default="2016-01-04",
+        help="Start date in YYYY-MM-DD format (default: 2016-01-04)",
     )
 
     parser.add_argument(
-        "--end", type=str, required=True, help="End date in YYYY-MM-DD format"
+        "--end",
+        type=str,
+        default="2026-01-04",
+        help="End date in YYYY-MM-DD format (default: 2026-01-04)",
     )
 
     # Strategy selection for single-strategy mode
