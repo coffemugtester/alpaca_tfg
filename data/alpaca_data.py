@@ -13,7 +13,7 @@ def fetch_daily_bars(
     symbol: str,
     start: datetime,
     end: datetime,
-    adjustment: str = "raw",
+    adjustment: str = "split",
 ) -> pd.DataFrame:
     """
     Fetch daily bars for a single symbol from Alpaca and return a clean DataFrame.
