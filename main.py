@@ -4,7 +4,13 @@ import matplotlib
 
 from backtesting.runner import run_backtest
 from backtesting.validation import ValidationPipeline
-from config import CASH_DEFAULT, COMMISSION_DEFAULT, SLIPPAGE_DEFAULT, parse_date, calculate_months_between
+from config import (
+    CASH_DEFAULT,
+    COMMISSION_DEFAULT,
+    SLIPPAGE_DEFAULT,
+    parse_date,
+    calculate_months_between,
+)
 from strategies.dca import DollarCostAveraging
 from strategies.buy_and_hold import BuyAndHold
 from strategies.trendfollow import TrendFollowingStrategy
@@ -36,14 +42,14 @@ def parse_args():
     parser.add_argument(
         "--start",
         type=str,
-        default="2016-01-04",
+        default="2016-01-01",
         help="Start date in YYYY-MM-DD format (default: 2016-01-04)",
     )
 
     parser.add_argument(
         "--end",
         type=str,
-        default="2026-01-04",
+        default="2026-01-01",
         help="End date in YYYY-MM-DD format (default: 2026-01-04)",
     )
 
@@ -98,7 +104,10 @@ def get_strategy_class(strategy_name: str):
 
 def get_strategy_map():
     """Get all registered strategies as {display_name: strategy_class} dict."""
-    return {display_name: strategy_cls for display_name, strategy_cls in STRATEGY_REGISTRY.values()}
+    return {
+        display_name: strategy_cls
+        for display_name, strategy_cls in STRATEGY_REGISTRY.values()
+    }
 
 
 def main():
@@ -112,7 +121,9 @@ def main():
         raise ValueError("Must specify either --strategy or --compare.")
 
     if args.plot and args.compare:
-        raise ValueError("--plot flag only works in single-strategy mode, not with --compare.")
+        raise ValueError(
+            "--plot flag only works in single-strategy mode, not with --compare."
+        )
 
     # Parse dates
     start = parse_date(args.start)
@@ -141,7 +152,7 @@ def main():
         # Set matplotlib backend based on --plot flag
         if not args.plot:
             # Suppress plots if --plot not specified
-            matplotlib.use('Agg')
+            matplotlib.use("Agg")
         # else: leave backend as default (interactive) to show plots
 
         strategy_cls = get_strategy_class(args.strategy)
