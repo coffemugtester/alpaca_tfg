@@ -199,17 +199,19 @@ class ValidationPipeline:
         cerebro.adddata(data_feed, name=self.symbol)
 
         # Add strategy with parameters
+        # Calculate total months for dynamic redistribution strategies
+        num_months = calculate_months_between(self.start, self.end)
+
         # DCA spreads initial cash evenly over all months
         if strategy_cls == DollarCostAveraging:
-            num_months = calculate_months_between(self.start, self.end)
             monthly_invest = self.cash / num_months
             cerebro.addstrategy(strategy_cls, monthly_invest=monthly_invest)
-        # TrendFollowing: suppress trade logs in comparison mode
+        # TrendFollowing: suppress trade logs in comparison mode, pass total_months
         elif strategy_cls == TrendFollowingStrategy:
-            cerebro.addstrategy(strategy_cls, printlog=False)
-        # MeanReversion: suppress trade logs in comparison mode
+            cerebro.addstrategy(strategy_cls, printlog=False, total_months=num_months)
+        # MeanReversion: suppress trade logs in comparison mode, pass total_months
         elif strategy_cls == MeanReversionStrategy:
-            cerebro.addstrategy(strategy_cls, printlog=False)
+            cerebro.addstrategy(strategy_cls, printlog=False, total_months=num_months)
         else:
             cerebro.addstrategy(strategy_cls)
 
