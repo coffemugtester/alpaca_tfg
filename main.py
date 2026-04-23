@@ -159,11 +159,15 @@ def main():
 
         # Calculate strategy-specific parameters
         strategy_params = {}
+        num_months = calculate_months_between(start, end)
+
         if args.strategy == "dca":
             # DCA spreads initial cash evenly over all months
-            num_months = calculate_months_between(start, end)
             monthly_invest = args.cash / num_months
             strategy_params = {"monthly_invest": monthly_invest}
+        elif args.strategy in ["trendfollowing", "meanreversion"]:
+            # Dynamic redistribution strategies need total_months
+            strategy_params = {"total_months": num_months}
 
         run_backtest(
             symbol=args.symbol,

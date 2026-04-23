@@ -32,6 +32,7 @@ class MeanReversionStrategy(bt.Strategy):
         max_deploy=0.995,  # invest up to 99.5% of initial cash
         allow_fractional=True,
         printlog=True,
+        total_months=None,  # passed from pipeline, or auto-calculated (buggy)
     )
 
     def __init__(self) -> None:
@@ -139,8 +140,18 @@ class MeanReversionStrategy(bt.Strategy):
         # Capture initial cash and initialize dynamic budget model
         if self.initial_cash is None:
             self.initial_cash = cash
-            self.total_months = self._count_backtest_months()
+            # Use parameter if provided, otherwise auto-calculate (may be inaccurate)
+            if self.p.total_months is not None:
+                self.total_months = self.p.total_months
+            else:
+                self.total_months = self._count_backtest_months()
             self.deployable_total = self.initial_cash * self.p.max_deploy
+
+            print(
+                f"[MeanReversion] INITIALIZATION | Initial cash: ${self.initial_cash:,.2f} | "
+                f"Total months in backtest: {self.total_months} | "
+                f"Deployable total (99.5%): ${self.deployable_total:,.2f}"
+            )
 
         # collect metrics
         self.dates.append(dt)
@@ -202,8 +213,19 @@ class MeanReversionStrategy(bt.Strategy):
             remaining_deployable = max(0.0, self.deployable_total - self.total_invested)
             invest = min(self.current_month_budget, remaining_deployable, cash)
 
+            print(
+                f"[MeanReversion] SIZING CALC | Monthly budget: ${self.current_month_budget:,.2f} | "
+                f"Remaining deployable: ${remaining_deployable:,.2f} | "
+                f"Available cash: ${cash:,.2f} | "
+                f"Min of these (invest): ${invest:,.2f}"
+            )
+
             if invest > 0:
                 size = invest / close
+
+                print(
+                    f"[MeanReversion] SIZING CALC | Invest: ${invest:,.2f} / Close: ${close:.2f} = Size: {size:.6f} shares"
+                )
 
                 if not self.p.allow_fractional:
                     size = int(size)
@@ -238,6 +260,12 @@ class MeanReversionStrategy(bt.Strategy):
                 entry_size = float(order.executed.size)
                 invested = entry_price * entry_size
 
+                print(
+                    f"[MeanReversion] ORDER EXECUTED | Price: ${entry_price:.2f} | "
+                    f"Size: {entry_size:.6f} shares | "
+                    f"Cash deployed: ${invested:,.2f} (includes commission/slippage)"
+                )
+
                 self.entries.append(
                     {
                         "date": entry_date,
@@ -254,6 +282,11 @@ class MeanReversionStrategy(bt.Strategy):
                 # update deployment state
                 self.total_invested += invested
                 self.last_entry_month_key = (entry_date.year, entry_date.month)
+
+                print(
+                    f"[MeanReversion] DEPLOYMENT UPDATE | Total invested so far: ${self.total_invested:,.2f} | "
+                    f"Remaining deployable: ${self.deployable_total - self.total_invested:,.2f}"
+                )
 
                 # reset pullback state after successful entry
                 self.pullback_armed = False
