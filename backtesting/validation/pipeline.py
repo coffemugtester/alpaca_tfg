@@ -330,6 +330,7 @@ class ValidationPipeline:
             raise ValueError(f"No daily account data for {strategy_name}")
 
         rows: list[dict] = []
+        previous_cash = initial_cash
 
         for date_key in sorted(daily_account_data.keys()):
             snapshot = daily_account_data.get(date_key, {})
@@ -354,6 +355,11 @@ class ValidationPipeline:
             cash_pct = min(max(cash_pct, 0.0), 1.0)
             exposure_pct = min(max(exposure_pct, 0.0), 1.0)
 
+            # Calculate amount moved (cash deployed in trades)
+            # Positive = buy (cash decreased), Negative = sell (cash increased), Zero = no trade
+            amount_moved = previous_cash - available_cash
+            previous_cash = available_cash
+
             date_str = (
                 date_key.date().isoformat()
                 if hasattr(date_key, "date")
@@ -368,6 +374,7 @@ class ValidationPipeline:
                     "exposure": round(exposure, 6),
                     "cash_pct": round(cash_pct, 8),
                     "exposure_pct": round(exposure_pct, 8),
+                    "amount_moved": round(amount_moved, 6),
                 }
             )
 
@@ -413,6 +420,7 @@ class ValidationPipeline:
             "exposure",
             "cash_pct",
             "exposure_pct",
+            "amount_moved",
         ]
 
         with output_path.open("w", newline="", encoding="utf-8") as csv_file:
