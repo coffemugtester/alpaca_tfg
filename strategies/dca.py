@@ -21,6 +21,7 @@ class DollarCostAveraging(bt.Strategy):
     params = dict(
         monthly_invest=100.0,  # default if not specified; typically overridden
         allow_fractional=True,  # True for fractional ETFs (if broker/data supports)
+        show_plot=True,  # whether to display matplotlib chart at end
     )
 
     def __init__(self) -> None:
@@ -96,7 +97,10 @@ class DollarCostAveraging(bt.Strategy):
         plt.grid(True)
 
         plt.tight_layout()
-        plt.show()
+
+        if self.p.show_plot:
+            plt.show()
+        else:
+            plt.close()
         # plt.savefig("reports/dca_portfolio.png")
-        # plt.close()
 

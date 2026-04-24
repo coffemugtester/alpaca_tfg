@@ -33,6 +33,7 @@ class MeanReversionStrategy(bt.Strategy):
         allow_fractional=True,
         printlog=True,
         total_months=None,  # passed from pipeline, or auto-calculated (buggy)
+        show_plot=True,  # whether to display matplotlib chart at end
     )
 
     def __init__(self) -> None:
@@ -415,6 +416,9 @@ class MeanReversionStrategy(bt.Strategy):
         plt.grid(True)
 
         plt.tight_layout()
-        plt.show()
+
+        if self.p.show_plot:
+            plt.show()
+        else:
+            plt.close()
         # plt.savefig("reports/meanreversion_portfolio.png")
-        # plt.close()

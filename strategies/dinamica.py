@@ -6,33 +6,29 @@ import matplotlib.pyplot as plt
 
 class DinamicaStrategy(bt.Strategy):
     """
-    Dinámica - Iteration 10: Hybrid DCA + Value Averaging Dip Buyer.
-
-    Purpose:
-    Avoids the previous exposure bug by treating monthly capital as a recurring
-    contribution, not as pre-split capital invested too early.
+    Dinámica - Iteration 12: Hybrid DCA + Value Averaging Recovery Buyer.
 
     Structure:
     - DCA bucket: invested automatically every month.
     - Strategic bucket: accumulated in a side fund.
-    - Strategic deployment follows a Value Averaging logic:
-      buy only the amount required to move the strategic portfolio toward
-      a target value path, preferably during dips.
+    - Strategic deployment follows a Value Averaging logic.
+    - Strategic entry occurs when:
+        1. Price is below SMA200 (weak long-term regime)
+        2. Price has recovered above SMA20 (short-term rebound)
+        3. Fallback activates after excess strategic cash accumulation
 
-    This makes the strategy closer to:
-    - Dollar Cost Averaging for guaranteed exposure.
-    - Value Averaging for dynamic capital allocation.
+    Purpose:
+    Test whether entering on confirmed rebounds after weakness
+    performs better than buying direct drawdowns.
     """
 
     params = dict(
         monthly_invest=100.0,
         allow_fractional=True,
         dca_weight=0.70,
-        # Value Averaging parameters
         va_expected_monthly_return=0.0,
         fallback_after_months=3,
-        # Dip filters
-        min_drawdown=0.03,
+        show_plot=True,  # whether to display matplotlib chart at end
     )
 
     def __init__(self) -> None:
@@ -49,9 +45,8 @@ class DinamicaStrategy(bt.Strategy):
 
         self.sma20 = bt.indicators.SimpleMovingAverage(self.data.close, period=20)
         self.sma200 = bt.indicators.SimpleMovingAverage(self.data.close, period=200)
-        self.highest_252 = bt.indicators.Highest(self.data.close, period=252)
 
-        # Side-fund / strategic accounting
+        # Strategic side fund
         self.accumulated_strategic_cash = 0.0
         self.strategic_shares = 0.0
         self.strategic_target_value = 0.0
@@ -78,11 +73,15 @@ class DinamicaStrategy(bt.Strategy):
         pos = self.getposition()
         pos_value = float(pos.size) * close
 
+        # Metrics
         self.dates.append(dt)
         self.cash.append(cash)
         self.position_value.append(pos_value)
         self.total_value.append(value)
 
+        # =====================
+        # NEW MONTH CONTRIBUTION
+        # =====================
         current_period = (dt.year, dt.month)
         last_period = (self._last_year, self._last_month)
 
@@ -99,15 +98,14 @@ class DinamicaStrategy(bt.Strategy):
             dca_amount = monthly * dca_weight
             strategic_amount = monthly * strategic_weight
 
-            # --- DCA bucket ---
+            # Automatic DCA part
             self._buy_amount(dca_amount, close)
             self._dca_entry_count += 1
 
-            # --- Strategic side fund ---
+            # Strategic reserve
             self.accumulated_strategic_cash += strategic_amount
 
-            # Value Averaging target path:
-            # previous target grows by expected return, then new contribution is added.
+            # Value Averaging target grows monthly
             self.strategic_target_value = (
                 self.strategic_target_value
                 * (1.0 + float(self.p.va_expected_monthly_return))
@@ -122,19 +120,22 @@ class DinamicaStrategy(bt.Strategy):
         if not indicators_ready:
             return
 
+        # =====================
+        # VALUE AVERAGING GAP
+        # =====================
         strategic_market_value = self.strategic_shares * close
-
-        # VA gap: how much the strategic portfolio is below its target.
         va_gap = self.strategic_target_value - strategic_market_value
 
         if va_gap <= 0:
             return
 
-        drawdown_pct = (self.highest_252[0] - close) / self.highest_252[0]
+        # =====================
+        # ENTRY SIGNAL
+        # =====================
+        # Weak long-term regime, but short-term rebound
+        recovery_after_downtrend = close < self.sma200[0] and close > self.sma20[0]
 
-        bull_pullback = close > self.sma200[0] and close < self.sma20[0]
-        major_correction = drawdown_pct >= float(self.p.min_drawdown)
-
+        # Monthly limit
         current_entry_period = (dt.year, dt.month)
         last_entry_period = (
             self._last_strategic_entry_year,
@@ -142,6 +143,7 @@ class DinamicaStrategy(bt.Strategy):
         )
         can_enter_this_month = current_entry_period != last_entry_period
 
+        # Fallback if reserve too large
         strategic_monthly = self.p.monthly_invest * (1.0 - self.p.dca_weight)
 
         fallback_signal = (
@@ -150,15 +152,15 @@ class DinamicaStrategy(bt.Strategy):
         )
 
         entry_signal = can_enter_this_month and (
-            bull_pullback or major_correction or fallback_signal
+            recovery_after_downtrend or fallback_signal
         )
 
         if not entry_signal:
             return
 
-        # Value Averaging deployment:
-        # invest only what is needed to close the target gap,
-        # capped by accumulated strategic cash and broker cash.
+        # =====================
+        # POSITION SIZING
+        # =====================
         invest = min(
             va_gap,
             self.accumulated_strategic_cash,
@@ -242,10 +244,14 @@ class DinamicaStrategy(bt.Strategy):
         plt.xlabel("Date")
         plt.ylabel("Value ($)")
         plt.title(
-            f"Dinámica Iteration 10 "
-            f"({dca_pct:.0f}% DCA + {strategic_pct:.0f}% Value Averaging)"
+            f"Dinámica Iteration 12 "
+            f"({dca_pct:.0f}% DCA + {strategic_pct:.0f}% Recovery VA)"
         )
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
-        plt.show()
+
+        if self.p.show_plot:
+            plt.show()
+        else:
+            plt.close()
