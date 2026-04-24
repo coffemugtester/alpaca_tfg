@@ -19,7 +19,7 @@ from config import calculate_months_between
 from strategies.dca import DollarCostAveraging
 from strategies.trendfollow import TrendFollowingStrategy
 from strategies.meanreversion import MeanReversionStrategy
-from strategies.dip_buyer import DipBuyerStrategy
+from strategies.dinamica import DinamicaStrategy
 from .stages.basic_metrics import BasicMetricsStage
 
 
@@ -213,8 +213,8 @@ class ValidationPipeline:
         # MeanReversion: suppress trade logs in comparison mode, pass total_months
         elif strategy_cls == MeanReversionStrategy:
             cerebro.addstrategy(strategy_cls, printlog=False, total_months=num_months)
-        # DipBuyer: currently DCA baseline, uses monthly_invest
-        elif strategy_cls == DipBuyerStrategy:
+        # Dinamica: uses monthly_invest calculated from total budget
+        elif strategy_cls == DinamicaStrategy:
             monthly_invest = self.cash / num_months
             cerebro.addstrategy(strategy_cls, monthly_invest=monthly_invest)
         else:
