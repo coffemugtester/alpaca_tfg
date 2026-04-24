@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CLI tool for comparing DCA baseline vs DipBuyer test strategy.
+CLI tool for comparing DCA baseline vs dinamica test strategy.
 
 Usage:
     python compare_strategies.py --symbol SPY --start 2016-01-04 --end 2026-01-02
@@ -13,7 +13,7 @@ from backtesting.strategy_comparison import run_strategy_comparison
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Compare DCA baseline vs DipBuyer test strategy"
+        description="Compare DCA baseline vs Dinamica test strategy"
     )
 
     parser.add_argument(

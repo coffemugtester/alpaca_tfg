@@ -15,7 +15,7 @@ from strategies.dca import DollarCostAveraging
 from strategies.buy_and_hold import BuyAndHold
 from strategies.trendfollow import TrendFollowingStrategy
 from strategies.meanreversion import MeanReversionStrategy
-from strategies.dip_buyer import DipBuyerStrategy
+from strategies.dinamica import DinamicaStrategy
 
 
 # Canonical strategy registry - single source of truth
@@ -25,7 +25,7 @@ STRATEGY_REGISTRY = {
     "bnh": ("Buy & Hold", BuyAndHold),
     "trendfollowing": ("TrendFollowing", TrendFollowingStrategy),
     "meanreversion": ("MeanReversion", MeanReversionStrategy),
-    "dipbuyer": ("DipBuyer", DipBuyerStrategy),
+    "dinamica": ("Dinámica", DinamicaStrategy),
 }
 
 
@@ -167,8 +167,8 @@ def main():
             # DCA spreads initial cash evenly over all months
             monthly_invest = args.cash / num_months
             strategy_params = {"monthly_invest": monthly_invest}
-        elif args.strategy == "dipbuyer":
-            # DipBuyer currently uses DCA baseline
+        elif args.strategy == "dinamica":
+            # dinamica currently uses DCA baseline
             monthly_invest = args.cash / num_months
             strategy_params = {"monthly_invest": monthly_invest}
         elif args.strategy in ["trendfollowing", "meanreversion"]:

@@ -1,7 +1,7 @@
 """
-Strategy comparison module for iterative DipBuyer improvements.
+Strategy comparison module for iterative Dinamica improvements.
 
-Compares DCA (baseline) vs DipBuyer (test) to measure delta from known-good strategy.
+Compares DCA (baseline) vs Dinamica (test) to measure delta from known-good strategy.
 """
 
 from datetime import datetime
@@ -13,7 +13,7 @@ from config import calculate_months_between
 from data.alpaca_data import fetch_daily_bars
 from backtesting.data_adapter import df_to_bt_feed
 from strategies.dca import DollarCostAveraging
-from strategies.dip_buyer import DipBuyerStrategy
+from strategies.dinamica import DinamicaStrategy
 
 
 def run_strategy_comparison(
@@ -25,7 +25,7 @@ def run_strategy_comparison(
     slippage: float = 0.0003,
 ) -> None:
     """
-    Run DCA baseline vs DipBuyer test and display performance comparison.
+    Run DCA baseline vs Dinamica test and display performance comparison.
 
     Args:
         symbol: Ticker to backtest
@@ -36,7 +36,7 @@ def run_strategy_comparison(
         slippage: Slippage rate (default 0.03%)
     """
     print("\n" + "=" * 80)
-    print(f"STRATEGY COMPARISON: DCA (baseline) vs DipBuyer (test)")
+    print(f"STRATEGY COMPARISON: DCA (baseline) vs Dinamica (test)")
     print(f"Symbol: {symbol} | Period: {start.date()} to {end.date()}")
     print("=" * 80 + "\n")
 
@@ -66,10 +66,10 @@ def run_strategy_comparison(
         monthly_invest=monthly_invest,
     )
 
-    # Run DipBuyer test
-    print("Running DipBuyer (test)...")
-    dipbuyer_result = _run_single_strategy(
-        strategy_cls=DipBuyerStrategy,
+    # Run Dinamica test
+    print("Running Dinamica (test)...")
+    dinamica_result = _run_single_strategy(
+        strategy_cls=DinamicaStrategy,
         data_feed=data_feed,
         symbol=symbol,
         cash=cash,
@@ -79,7 +79,7 @@ def run_strategy_comparison(
     )
 
     # Display comparison
-    _print_comparison(dca_result, dipbuyer_result, cash)
+    _print_comparison(dca_result, dinamica_result, cash)
 
 
 def _run_single_strategy(
@@ -129,7 +129,7 @@ def _run_single_strategy(
     }
 
 
-def _print_comparison(dca: dict, dipbuyer: dict, initial_cash: float) -> None:
+def _print_comparison(dca: dict, dinamica: dict, initial_cash: float) -> None:
     """Print side-by-side comparison with deltas."""
     print("\n" + "=" * 80)
     print("RESULTS")
@@ -137,55 +137,55 @@ def _print_comparison(dca: dict, dipbuyer: dict, initial_cash: float) -> None:
 
     # Calculate metrics
     dca_return = ((dca["final_value"] - initial_cash) / initial_cash) * 100
-    dipbuyer_return = ((dipbuyer["final_value"] - initial_cash) / initial_cash) * 100
-    return_delta = dipbuyer_return - dca_return
+    dinamica_return = ((dinamica["final_value"] - initial_cash) / initial_cash) * 100
+    return_delta = dinamica_return - dca_return
 
     dca_sharpe = dca["sharpe_ratio"] if dca["sharpe_ratio"] is not None else 0.0
-    dipbuyer_sharpe = (
-        dipbuyer["sharpe_ratio"] if dipbuyer["sharpe_ratio"] is not None else 0.0
+    dinamica_sharpe = (
+        dinamica["sharpe_ratio"] if dinamica["sharpe_ratio"] is not None else 0.0
     )
-    sharpe_delta = dipbuyer_sharpe - dca_sharpe
+    sharpe_delta = dinamica_sharpe - dca_sharpe
 
     dca_dd = dca["max_drawdown"] if dca["max_drawdown"] is not None else 0.0
-    dipbuyer_dd = (
-        dipbuyer["max_drawdown"] if dipbuyer["max_drawdown"] is not None else 0.0
+    dinamica_dd = (
+        dinamica["max_drawdown"] if dinamica["max_drawdown"] is not None else 0.0
     )
-    dd_delta = dipbuyer_dd - dca_dd
+    dd_delta = dinamica_dd - dca_dd
 
     # Print header
-    header = f"{'Metric':<20} {'DCA (baseline)':>18} {'DipBuyer (test)':>18} {'Delta':>15}"
+    header = f"{'Metric':<20} {'DCA (baseline)':>18} {'Dinamica (test)':>18} {'Delta':>15}"
     print(header)
     print("-" * 80)
 
     # Final Value
     print(
-        f"{'Final Value':<20} ${dca['final_value']:>17,.2f} ${dipbuyer['final_value']:>17,.2f} "
-        f"{_format_delta_value(dipbuyer['final_value'] - dca['final_value']):>15}"
+        f"{'Final Value':<20} ${dca['final_value']:>17,.2f} ${dinamica['final_value']:>17,.2f} "
+        f"{_format_delta_value(dinamica['final_value'] - dca['final_value']):>15}"
     )
 
     # Total Return
     print(
-        f"{'Total Return %':<20} {dca_return:>17.2f}% {dipbuyer_return:>17.2f}% "
+        f"{'Total Return %':<20} {dca_return:>17.2f}% {dinamica_return:>17.2f}% "
         f"{_format_delta_pct(return_delta):>15}"
     )
 
     # Sharpe Ratio
     dca_sharpe_str = f"{dca_sharpe:.3f}" if dca["sharpe_ratio"] is not None else "N/A"
-    dipbuyer_sharpe_str = (
-        f"{dipbuyer_sharpe:.3f}" if dipbuyer["sharpe_ratio"] is not None else "N/A"
+    dinamica_sharpe_str = (
+        f"{dinamica_sharpe:.3f}" if dinamica["sharpe_ratio"] is not None else "N/A"
     )
     print(
-        f"{'Sharpe Ratio':<20} {dca_sharpe_str:>18} {dipbuyer_sharpe_str:>18} "
+        f"{'Sharpe Ratio':<20} {dca_sharpe_str:>18} {dinamica_sharpe_str:>18} "
         f"{_format_delta_sharpe(sharpe_delta):>15}"
     )
 
     # Max Drawdown
     dca_dd_str = f"{dca_dd*100:.2f}%" if dca["max_drawdown"] is not None else "N/A"
-    dipbuyer_dd_str = (
-        f"{dipbuyer_dd*100:.2f}%" if dipbuyer["max_drawdown"] is not None else "N/A"
+    dinamica_dd_str = (
+        f"{dinamica_dd*100:.2f}%" if dinamica["max_drawdown"] is not None else "N/A"
     )
     print(
-        f"{'Max Drawdown':<20} {dca_dd_str:>18} {dipbuyer_dd_str:>18} "
+        f"{'Max Drawdown':<20} {dca_dd_str:>18} {dinamica_dd_str:>18} "
         f"{_format_delta_dd(dd_delta):>15}"
     )
 
@@ -194,11 +194,11 @@ def _print_comparison(dca: dict, dipbuyer: dict, initial_cash: float) -> None:
     # Summary verdict
     print("\nVERDICT:")
     if return_delta > 1.0:
-        print(f"  ✓ DipBuyer OUTPERFORMS DCA by {return_delta:.2f}%")
+        print(f"  ✓ Dinamica OUTPERFORMS DCA by {return_delta:.2f}%")
     elif return_delta < -1.0:
-        print(f"  ✗ DipBuyer UNDERPERFORMS DCA by {abs(return_delta):.2f}%")
+        print(f"  ✗ Dinamica UNDERPERFORMS DCA by {abs(return_delta):.2f}%")
     else:
-        print(f"  ≈ DipBuyer matches DCA (delta: {return_delta:.2f}%)")
+        print(f"  ≈ Dinamica matches DCA (delta: {return_delta:.2f}%)")
 
     if sharpe_delta > 0.05:
         print(f"  ✓ Better risk-adjusted returns (Sharpe +{sharpe_delta:.3f})")
