@@ -15,6 +15,8 @@ from config import calculate_months_between
 from data.alpaca_data import fetch_daily_bars
 from backtesting.data_adapter import df_to_bt_feed
 from strategies.dca import DollarCostAveraging
+from strategies.buy_and_hold import BuyAndHold
+from strategies.trendfollow import TrendFollowingStrategy
 from strategies.dinamica import DinamicaStrategy
 from strategies.meanreversion import MeanReversionStrategy
 from strategies.tacticaltrenddip import TacticalTrendDipStrategy
@@ -45,9 +47,10 @@ def run_strategy_comparison(
     commission: float = 0.0002,
     slippage: float = 0.0003,
     show_plots: bool = False,
+    strategies: dict = None,
 ) -> dict:
     """
-    Run 3-strategy comparison: DCA, Dinamica, and MeanReversion.
+    Run multi-strategy comparison on a single asset.
 
     Args:
         symbol: Ticker to backtest
@@ -57,14 +60,25 @@ def run_strategy_comparison(
         commission: Commission rate (default 0.02%)
         slippage: Slippage rate (default 0.03%)
         show_plots: Whether to display matplotlib plots (default False)
+        strategies: Dict mapping display names to strategy classes (e.g., {"DCA": DollarCostAveraging})
 
     Returns:
         Dict with symbol and strategy results
     """
-    print("\n" + "=" * 80)
-    print(f"STRATEGY COMPARISON: DCA | Dinamica | MeanReversion | TacticalTrendDip")
+    if strategies is None:
+        # Fallback to hardcoded 4 strategies for backwards compatibility
+        strategies = {
+            "DCA": DollarCostAveraging,
+            "Dinamica": DinamicaStrategy,
+            "MeanReversion": MeanReversionStrategy,
+            "TacticalTrendDip": TacticalTrendDipStrategy,
+        }
+
+    strategy_names = " | ".join(strategies.keys())
+    print("\n" + "=" * 120)
+    print(f"STRATEGY COMPARISON: {strategy_names}")
     print(f"Symbol: {symbol} | Period: {start.date()} to {end.date()}")
-    print("=" * 80 + "\n")
+    print("=" * 120 + "\n")
 
     # Fetch data once
     print(f"Fetching data...")
@@ -80,75 +94,40 @@ def run_strategy_comparison(
     num_months = calculate_months_between(start, end)
     monthly_invest = cash / num_months
 
-    # Run DCA baseline
-    print("Running DCA...")
-    dca_result = _run_single_strategy(
-        strategy_cls=DollarCostAveraging,
-        data_feed=data_feed,
-        symbol=symbol,
-        cash=cash,
-        commission=commission,
-        slippage=slippage,
-        monthly_invest=monthly_invest,
-        num_months=num_months,
-        show_plots=show_plots,
-    )
+    # Run all strategies
+    results = {}
+    for strategy_name, strategy_cls in strategies.items():
+        print(f"Running {strategy_name}...")
 
-    # Run Dinamica
-    print("Running Dinamica...")
-    dinamica_result = _run_single_strategy(
-        strategy_cls=DinamicaStrategy,
-        data_feed=data_feed,
-        symbol=symbol,
-        cash=cash,
-        commission=commission,
-        slippage=slippage,
-        monthly_invest=monthly_invest,
-        num_months=num_months,
-        show_plots=show_plots,
-    )
+        # Determine strategy-specific parameters
+        if strategy_cls in [DollarCostAveraging, DinamicaStrategy]:
+            monthly_invest_param = monthly_invest
+        else:
+            monthly_invest_param = None
 
-    # Run MeanReversion
-    print("Running MeanReversion...")
-    meanrev_result = _run_single_strategy(
-        strategy_cls=MeanReversionStrategy,
-        data_feed=data_feed,
-        symbol=symbol,
-        cash=cash,
-        commission=commission,
-        slippage=slippage,
-        monthly_invest=None,
-        num_months=num_months,
-        show_plots=show_plots,
-    )
-
-    # Run TacticalTrendDip
-    print("Running TacticalTrendDip...")
-    tactical_result = _run_single_strategy(
-        strategy_cls=TacticalTrendDipStrategy,
-        data_feed=data_feed,
-        symbol=symbol,
-        cash=cash,
-        commission=commission,
-        slippage=slippage,
-        monthly_invest=None,
-        num_months=num_months,
-        show_plots=show_plots,
-    )
+        result = _run_single_strategy(
+            strategy_cls=strategy_cls,
+            data_feed=data_feed,
+            symbol=symbol,
+            cash=cash,
+            commission=commission,
+            slippage=slippage,
+            monthly_invest=monthly_invest_param,
+            num_months=num_months,
+            show_plots=show_plots,
+        )
+        results[strategy_name] = result
 
     # Display comparison
-    _print_comparison(dca_result, dinamica_result, meanrev_result, tactical_result, cash)
+    _print_comparison(results, cash)
 
     # Export to CSV
-    _export_to_csv(symbol, dca_result, dinamica_result, meanrev_result, tactical_result, cash)
+    _export_to_csv(symbol, results, cash)
 
     # Return results for summary table
     return {
         "symbol": symbol,
-        "dca": dca_result,
-        "dinamica": dinamica_result,
-        "meanrev": meanrev_result,
-        "tactical": tactical_result,
+        "results": results,
         "initial_cash": cash,
     }
 
@@ -173,7 +152,10 @@ def _run_single_strategy(
         cerebro.addstrategy(strategy_cls, monthly_invest=monthly_invest, show_plot=show_plots)
     elif strategy_cls == MeanReversionStrategy:
         cerebro.addstrategy(strategy_cls, total_months=num_months, printlog=False, show_plot=show_plots)
+    elif strategy_cls == TrendFollowingStrategy:
+        cerebro.addstrategy(strategy_cls, total_months=num_months, show_plot=show_plots)
     else:
+        # BuyAndHold, TacticalTrendDip, and any other strategies
         cerebro.addstrategy(strategy_cls, show_plot=show_plots)
 
     cerebro.broker.setcash(cash)
@@ -218,98 +200,80 @@ def _run_single_strategy(
     }
 
 
-def _print_comparison(dca: dict, dinamica: dict, meanrev: dict, tactical: dict, initial_cash: float) -> None:
-    """Print 4-strategy comparison table."""
-    print("\n" + "=" * 120)
-    print("RESULTS")
-    print("=" * 120)
+def _print_comparison(results: dict, initial_cash: float) -> None:
+    """Print multi-strategy comparison table.
 
-    # Calculate metrics for all strategies
-    dca_return = ((dca["final_value"] - initial_cash) / initial_cash) * 100
-    dinamica_return = ((dinamica["final_value"] - initial_cash) / initial_cash) * 100
-    meanrev_return = ((meanrev["final_value"] - initial_cash) / initial_cash) * 100
-    tactical_return = ((tactical["final_value"] - initial_cash) / initial_cash) * 100
+    Args:
+        results: Dict mapping strategy names to result dicts
+        initial_cash: Initial cash amount
+    """
+    print("\n" + "=" * 140)
+    print("RESULTS")
+    print("=" * 140)
+
+    # Calculate column width based on number of strategies
+    strategy_names = list(results.keys())
+    num_strategies = len(strategy_names)
+    col_width = 15
 
     # Print header
-    header = f"{'Metric':<20} {'DCA':>15} {'Dinamica':>15} {'MeanReversion':>15} {'TacticalTrendDip':>18}"
+    header = f"{'Metric':<20} " + " ".join([f"{name:>{col_width}}" for name in strategy_names])
     print(header)
-    print("-" * 120)
+    print("-" * 140)
 
     # Final Value
-    print(
-        f"{'Final Value':<20} "
-        f"${dca['final_value']:>14,.2f} "
-        f"${dinamica['final_value']:>14,.2f} "
-        f"${meanrev['final_value']:>14,.2f} "
-        f"${tactical['final_value']:>17,.2f}"
-    )
+    final_values = [f"${results[name]['final_value']:>{col_width-1},.2f}" for name in strategy_names]
+    print(f"{'Final Value':<20} " + " ".join(final_values))
 
     # Total Return
-    print(
-        f"{'Total Return %':<20} "
-        f"{dca_return:>14.2f}% "
-        f"{dinamica_return:>14.2f}% "
-        f"{meanrev_return:>14.2f}% "
-        f"{tactical_return:>17.2f}%"
-    )
+    returns = [((results[name]["final_value"] - initial_cash) / initial_cash) * 100 for name in strategy_names]
+    return_strs = [f"{ret:>{col_width-1}.2f}%" for ret in returns]
+    print(f"{'Total Return %':<20} " + " ".join(return_strs))
 
     # Sharpe Ratio
-    dca_sharpe_str = f"{dca['sharpe_ratio']:.3f}" if dca["sharpe_ratio"] is not None else "N/A"
-    dinamica_sharpe_str = f"{dinamica['sharpe_ratio']:.3f}" if dinamica["sharpe_ratio"] is not None else "N/A"
-    meanrev_sharpe_str = f"{meanrev['sharpe_ratio']:.3f}" if meanrev["sharpe_ratio"] is not None else "N/A"
-    tactical_sharpe_str = f"{tactical['sharpe_ratio']:.3f}" if tactical["sharpe_ratio"] is not None else "N/A"
-    print(
-        f"{'Sharpe Ratio':<20} "
-        f"{dca_sharpe_str:>15} "
-        f"{dinamica_sharpe_str:>15} "
-        f"{meanrev_sharpe_str:>15} "
-        f"{tactical_sharpe_str:>18}"
-    )
+    sharpe_strs = []
+    for name in strategy_names:
+        sharpe = results[name]["sharpe_ratio"]
+        if sharpe is not None:
+            sharpe_strs.append(f"{sharpe:>{col_width}.3f}")
+        else:
+            sharpe_strs.append(f"{'N/A':>{col_width}}")
+    print(f"{'Sharpe Ratio':<20} " + " ".join(sharpe_strs))
 
     # Max Drawdown
-    dca_dd = dca["max_drawdown"] if dca["max_drawdown"] is not None else 0.0
-    dinamica_dd = dinamica["max_drawdown"] if dinamica["max_drawdown"] is not None else 0.0
-    meanrev_dd = meanrev["max_drawdown"] if meanrev["max_drawdown"] is not None else 0.0
-    tactical_dd = tactical["max_drawdown"] if tactical["max_drawdown"] is not None else 0.0
-    print(
-        f"{'Max Drawdown':<20} "
-        f"{dca_dd*100:>14.2f}% "
-        f"{dinamica_dd*100:>14.2f}% "
-        f"{meanrev_dd*100:>14.2f}% "
-        f"{tactical_dd*100:>17.2f}%"
-    )
+    dd_strs = []
+    for name in strategy_names:
+        dd = results[name]["max_drawdown"]
+        if dd is not None:
+            dd_strs.append(f"{dd*100:>{col_width-1}.2f}%")
+        else:
+            dd_strs.append(f"{0.0:>{col_width-1}.2f}%")
+    print(f"{'Max Drawdown':<20} " + " ".join(dd_strs))
 
     # Unused Cash
-    print(
-        f"{'Unused Cash':<20} "
-        f"${dca['final_cash']:>14,.2f} "
-        f"${dinamica['final_cash']:>14,.2f} "
-        f"${meanrev['final_cash']:>14,.2f} "
-        f"${tactical['final_cash']:>17,.2f}"
-    )
+    cash_strs = [f"${results[name]['final_cash']:>{col_width-1},.2f}" for name in strategy_names]
+    print(f"{'Unused Cash':<20} " + " ".join(cash_strs))
 
     # Order Count
-    print(
-        f"{'Order Count':<20} "
-        f"{dca['order_count']:>15} "
-        f"{dinamica['order_count']:>15} "
-        f"{meanrev['order_count']:>15} "
-        f"{tactical['order_count']:>18}"
-    )
+    order_strs = [f"{results[name]['order_count']:>{col_width}}" for name in strategy_names]
+    print(f"{'Order Count':<20} " + " ".join(order_strs))
 
-    print("=" * 120)
+    print("=" * 140)
     print("\n")
 
 
 def _export_to_csv(
     symbol: str,
-    dca: dict,
-    dinamica: dict,
-    meanrev: dict,
-    tactical: dict,
+    results: dict,
     initial_cash: float,
 ) -> None:
-    """Export comparison results to CSV in append mode."""
+    """Export comparison results to CSV in append mode.
+
+    Args:
+        symbol: Asset symbol
+        results: Dict mapping strategy names to result dicts
+        initial_cash: Initial cash amount
+    """
     # Create directory if it doesn't exist
     csv_dir = Path.cwd() / "global_comparison"
     csv_dir.mkdir(exist_ok=True)
@@ -320,15 +284,8 @@ def _export_to_csv(
     file_exists = csv_path.exists()
 
     # Prepare rows
-    strategies = [
-        ("DCA", dca),
-        ("Dinamica", dinamica),
-        ("MeanReversion", meanrev),
-        ("TacticalTrendDip", tactical),
-    ]
-
     rows = []
-    for strategy_name, result in strategies:
+    for strategy_name, result in results.items():
         total_return_pct = (
             (result["final_value"] - initial_cash) / initial_cash * 100
             if result["final_value"] > 0
@@ -373,8 +330,9 @@ def _export_to_csv(
         # Write rows
         writer.writerows(rows)
 
+    strategy_list = ", ".join(results.keys())
     print(f"Results exported to: {csv_path}")
-    print(f"Appended 4 rows (DCA, Dinamica, MeanReversion, TacticalTrendDip)\n")
+    print(f"Appended {len(results)} rows ({strategy_list})\n")
 
 
 def _format_delta_value(delta: float) -> str:
@@ -422,53 +380,47 @@ def print_summary_table(all_results: list[dict]) -> None:
     Print summary table for multi-asset comparison.
 
     Shows total return % for each asset × strategy combination.
+
+    Args:
+        all_results: List of result dicts from run_strategy_comparison()
     """
-    print("\n" + "=" * 120)
+    if not all_results:
+        return
+
+    # Extract strategy names from first result
+    first_result = all_results[0]
+    strategy_names = list(first_result["results"].keys())
+    col_width = 16
+
+    print("\n" + "=" * 140)
     print("MULTI-ASSET SUMMARY")
-    print("=" * 120)
+    print("=" * 140)
 
     # Header
-    header = f"{'Asset':<8} {'DCA Return':>13} {'Dinamica Return':>16} {'MeanRev Return':>16} {'Tactical Return':>16} {'Best Strategy':>15}"
+    strategy_headers = " ".join([f"{name + ' Return':>{col_width}}" for name in strategy_names])
+    header = f"{'Asset':<8} {strategy_headers} {'Best Strategy':>15}"
     print(header)
-    print("-" * 120)
+    print("-" * 140)
 
     # Rows: one per asset
     for result in all_results:
         symbol = result["symbol"]
         initial_cash = result["initial_cash"]
+        strategy_results = result["results"]
 
-        # Calculate returns
-        dca_return = (
-            (result["dca"]["final_value"] - initial_cash) / initial_cash * 100
-        )
-        dinamica_return = (
-            (result["dinamica"]["final_value"] - initial_cash) / initial_cash * 100
-        )
-        meanrev_return = (
-            (result["meanrev"]["final_value"] - initial_cash) / initial_cash * 100
-        )
-        tactical_return = (
-            (result["tactical"]["final_value"] - initial_cash) / initial_cash * 100
-        )
+        # Calculate returns for all strategies
+        returns = {}
+        for name in strategy_names:
+            final_value = strategy_results[name]["final_value"]
+            ret = ((final_value - initial_cash) / initial_cash) * 100
+            returns[name] = ret
 
         # Determine best strategy
-        returns = {
-            "DCA": dca_return,
-            "Dinamica": dinamica_return,
-            "MeanRev": meanrev_return,
-            "Tactical": tactical_return,
-        }
         best_strategy = max(returns, key=returns.get)
 
         # Print row
-        print(
-            f"{symbol:<8} "
-            f"{dca_return:>12.2f}% "
-            f"{dinamica_return:>15.2f}% "
-            f"{meanrev_return:>15.2f}% "
-            f"{tactical_return:>15.2f}% "
-            f"{best_strategy:>15}"
-        )
+        return_strs = " ".join([f"{returns[name]:>{col_width-1}.2f}%" for name in strategy_names])
+        print(f"{symbol:<8} {return_strs} {best_strategy:>15}")
 
-    print("=" * 120)
+    print("=" * 140)
     print(f"\nAll results exported to: global_comparison/comparison_results.csv\n")

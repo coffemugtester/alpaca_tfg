@@ -8,6 +8,7 @@ class BuyAndHold(bt.Strategy):
     params = dict(
         allow_fractional=True,
         cash_buffer=0.995,  # invierte el 99.5% para evitar rechazo por redondeo/gap
+        show_plot=True,  # whether to display matplotlib chart at end
     )
 
     def __init__(self) -> None:
@@ -88,4 +89,8 @@ class BuyAndHold(bt.Strategy):
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
-        plt.show()
+
+        if self.p.show_plot:
+            plt.show()
+        else:
+            plt.close()
