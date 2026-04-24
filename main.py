@@ -16,6 +16,7 @@ from strategies.buy_and_hold import BuyAndHold
 from strategies.trendfollow import TrendFollowingStrategy
 from strategies.meanreversion import MeanReversionStrategy
 from strategies.dinamica import DinamicaStrategy
+from strategies.tacticaltrenddip import TacticalTrendDipStrategy
 
 
 # Canonical strategy registry - single source of truth
@@ -26,6 +27,7 @@ STRATEGY_REGISTRY = {
     "trendfollowing": ("TrendFollowing", TrendFollowingStrategy),
     "meanreversion": ("MeanReversion", MeanReversionStrategy),
     "dinamica": ("Dinámica", DinamicaStrategy),
+    "tacticaltrenddip": ("TacticalTrendDip", TacticalTrendDipStrategy),
 }
 
 
