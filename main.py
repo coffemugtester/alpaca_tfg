@@ -18,6 +18,7 @@ from strategies.trendfollow import TrendFollowingStrategy
 from strategies.meanreversion import MeanReversionStrategy
 from strategies.dinamica import DinamicaStrategy
 from strategies.tacticaltrenddip import TacticalTrendDipStrategy
+from strategies.tacticaldipcooldown import TacticalTrendDipCooldown
 
 
 # Canonical strategy registry - single source of truth
@@ -29,6 +30,7 @@ STRATEGY_REGISTRY = {
     "meanreversion": ("MeanReversion", MeanReversionStrategy),
     "dinamica": ("Dinámica", DinamicaStrategy),
     "tacticaltrenddip": ("TacticalTrendDip", TacticalTrendDipStrategy),
+    "tacticaldipcooldown": ("TacticalDipCooldown", TacticalTrendDipCooldown),
 }
 
 # Default assets for multi-asset comparison mode
