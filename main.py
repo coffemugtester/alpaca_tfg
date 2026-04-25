@@ -19,6 +19,9 @@ from strategies.meanreversion import MeanReversionStrategy
 from strategies.dinamica import DinamicaStrategy
 from strategies.tacticaltrenddip import TacticalTrendDipStrategy
 from strategies.tacticaldipcooldown import TacticalTrendDipCooldown
+from strategies.tacticaldipcooldownbollinger import TacticalTrendDipCooldownBollinger
+from strategies.tacticalagressive import TacticalAggressive
+from strategies.tacticalatr import TacticalTrendDipReserve
 
 
 # Canonical strategy registry - single source of truth
@@ -30,7 +33,13 @@ STRATEGY_REGISTRY = {
     "meanreversion": ("MeanReversion", MeanReversionStrategy),
     "dinamica": ("Dinámica", DinamicaStrategy),
     "tacticaltrenddip": ("TacticalTrendDip", TacticalTrendDipStrategy),
-    "tacticaldipcooldown": ("TacticalDipCooldown", TacticalTrendDipCooldown),
+    "tacticaldipcooldown": ("TacticalDipCooldwn", TacticalTrendDipCooldown),
+    "tacticaldipcooldownbollinger": (
+        "TacticalDipCooldwnBollinger",
+        TacticalTrendDipCooldownBollinger,
+    ),
+    "tacticalagressive": ("TacticalAggressive", TacticalAggressive),
+    "tacticalatr": ("TacticalATR", TacticalTrendDipReserve),
 }
 
 # Default assets for multi-asset comparison mode
@@ -42,7 +51,9 @@ def parse_args():
         description="Run backtests with configurable symbols, date range, and strategies."
     )
 
-    subparsers = parser.add_subparsers(dest="command", required=True, help="Command to run")
+    subparsers = parser.add_subparsers(
+        dest="command", required=True, help="Command to run"
+    )
 
     # ============================================================
     # Subcommand: single
@@ -275,7 +286,9 @@ def main():
         # Determine which symbols to run
         if args.symbols is None:
             symbols = DEFAULT_ASSETS
-            print(f"\nNo --symbols specified. Running comparison for {len(symbols)} default assets:")
+            print(
+                f"\nNo --symbols specified. Running comparison for {len(symbols)} default assets:"
+            )
             print(f"{', '.join(symbols)}\n")
         else:
             symbols = args.symbols
@@ -283,7 +296,9 @@ def main():
         # Force disable plots in multi-asset mode
         show_plots = args.plot
         if len(symbols) > 1 and args.plot:
-            print("WARNING: --plot flag ignored in multi-asset mode (too many windows)\n")
+            print(
+                "WARNING: --plot flag ignored in multi-asset mode (too many windows)\n"
+            )
             show_plots = False
 
         # Get strategy map
