@@ -15,14 +15,6 @@ from config import (
 from strategies.dca import DollarCostAveraging
 from strategies.buy_and_hold import BuyAndHold
 from strategies.tacticalmonthly import TacticalMonthlyRedistributed
-from strategies.trendfollow import TrendFollowingStrategy
-from strategies.meanreversion import MeanReversionStrategy
-from strategies.dinamica import DinamicaStrategy
-from strategies.tacticaltrenddip import TacticalTrendDipStrategy
-from strategies.tacticaldipcooldown import TacticalTrendDipCooldown
-from strategies.tacticaldipcooldownbollinger import TacticalTrendDipCooldownBollinger
-from strategies.tacticalagressive import TacticalAggressive
-from strategies.tacticalatr import TacticalTrendDipReserve
 from strategies.tacticalatrmonthly import TacticalAtrMonthly
 
 
@@ -31,17 +23,6 @@ from strategies.tacticalatrmonthly import TacticalAtrMonthly
 STRATEGY_REGISTRY = {
     "dca": ("DCA", DollarCostAveraging),
     "bnh": ("Buy & Hold", BuyAndHold),
-    "trendfollowing": ("TrendFollowing", TrendFollowingStrategy),
-    "meanreversion": ("MeanReversion", MeanReversionStrategy),
-    "dinamica": ("Dinámica", DinamicaStrategy),
-    "tacticaltrenddip": ("TacticalTrendDip", TacticalTrendDipStrategy),
-    "tacticaldipcooldown": ("TacticalDipCooldwn", TacticalTrendDipCooldown),
-    "tacticaldipcooldownbollinger": (
-        "TacticalDipCooldwnBollinger",
-        TacticalTrendDipCooldownBollinger,
-    ),
-    "tacticalagressive": ("TacticalAggressive", TacticalAggressive),
-    "tacticalatr": ("TacticalATR", TacticalTrendDipReserve),
     "tacticalmonthly": ("TacticalMonthly", TacticalMonthlyRedistributed),
     "tacticalatrmonthly": ("TacticalATRMonthly", TacticalAtrMonthly),
 }
@@ -249,11 +230,7 @@ def main():
         if args.strategy == "dca":
             monthly_invest = args.cash / num_months
             strategy_params = {"monthly_invest": monthly_invest}
-        elif args.strategy == "dinamica":
-            monthly_invest = args.cash / num_months
-            strategy_params = {"monthly_invest": monthly_invest}
-        elif args.strategy in ["trendfollowing", "meanreversion"]:
-            strategy_params = {"total_months": num_months}
+        # BuyAndHold, TacticalMonthly, TacticalATRMonthly don't need special params
 
         run_backtest(
             symbol=args.symbol,

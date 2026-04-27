@@ -16,10 +16,8 @@ from data.alpaca_data import fetch_daily_bars
 from backtesting.data_adapter import df_to_bt_feed
 from strategies.dca import DollarCostAveraging
 from strategies.buy_and_hold import BuyAndHold
-from strategies.trendfollow import TrendFollowingStrategy
-from strategies.dinamica import DinamicaStrategy
-from strategies.meanreversion import MeanReversionStrategy
-from strategies.tacticaltrenddip import TacticalTrendDipStrategy
+from strategies.tacticalmonthly import TacticalMonthlyRedistributed
+from strategies.tacticalatrmonthly import TacticalAtrMonthly
 
 
 class OrderCountAnalyzer(bt.Analyzer):
@@ -69,9 +67,9 @@ def run_strategy_comparison(
         # Fallback to hardcoded 4 strategies for backwards compatibility
         strategies = {
             "DCA": DollarCostAveraging,
-            "Dinamica": DinamicaStrategy,
-            "MeanReversion": MeanReversionStrategy,
-            "TacticalTrendDip": TacticalTrendDipStrategy,
+            "Buy & Hold": BuyAndHold,
+            "TacticalMonthly": TacticalMonthlyRedistributed,
+            "TacticalATRMonthly": TacticalAtrMonthly,
         }
 
     strategy_names = " | ".join(strategies.keys())
@@ -100,9 +98,10 @@ def run_strategy_comparison(
         print(f"Running {strategy_name}...")
 
         # Determine strategy-specific parameters
-        if strategy_cls in [DollarCostAveraging, DinamicaStrategy]:
+        if strategy_cls == DollarCostAveraging:
             monthly_invest_param = monthly_invest
         else:
+            # BuyAndHold, TacticalMonthly, TacticalATRMonthly don't use monthly_invest
             monthly_invest_param = None
 
         result = _run_single_strategy(
@@ -148,14 +147,10 @@ def _run_single_strategy(
     cerebro.adddata(data_feed, name=symbol)
 
     # Add strategy with appropriate parameters
-    if strategy_cls == DollarCostAveraging or strategy_cls == DinamicaStrategy:
+    if strategy_cls == DollarCostAveraging:
         cerebro.addstrategy(strategy_cls, monthly_invest=monthly_invest, show_plot=show_plots)
-    elif strategy_cls == MeanReversionStrategy:
-        cerebro.addstrategy(strategy_cls, total_months=num_months, printlog=False, show_plot=show_plots)
-    elif strategy_cls == TrendFollowingStrategy:
-        cerebro.addstrategy(strategy_cls, total_months=num_months, show_plot=show_plots)
     else:
-        # BuyAndHold, TacticalTrendDip, and any other strategies
+        # BuyAndHold, TacticalMonthly, TacticalATRMonthly
         cerebro.addstrategy(strategy_cls, show_plot=show_plots)
 
     cerebro.broker.setcash(cash)
