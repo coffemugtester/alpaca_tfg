@@ -14,6 +14,7 @@ from config import (
 )
 from strategies.dca import DollarCostAveraging
 from strategies.buy_and_hold import BuyAndHold
+from strategies.tacticalmonthly import TacticalMonthlyRedistributed
 from strategies.trendfollow import TrendFollowingStrategy
 from strategies.meanreversion import MeanReversionStrategy
 from strategies.dinamica import DinamicaStrategy
@@ -22,6 +23,7 @@ from strategies.tacticaldipcooldown import TacticalTrendDipCooldown
 from strategies.tacticaldipcooldownbollinger import TacticalTrendDipCooldownBollinger
 from strategies.tacticalagressive import TacticalAggressive
 from strategies.tacticalatr import TacticalTrendDipReserve
+from strategies.tacticalatrmonthly import TacticalAtrMonthly
 
 
 # Canonical strategy registry - single source of truth
@@ -40,6 +42,8 @@ STRATEGY_REGISTRY = {
     ),
     "tacticalagressive": ("TacticalAggressive", TacticalAggressive),
     "tacticalatr": ("TacticalATR", TacticalTrendDipReserve),
+    "tacticalmonthly": ("TacticalMonthly", TacticalMonthlyRedistributed),
+    "tacticalatrmonthly": ("TacticalATRMonthly", TacticalAtrMonthly),
 }
 
 # Default assets for multi-asset comparison mode
