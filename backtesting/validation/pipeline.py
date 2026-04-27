@@ -17,11 +17,6 @@ from data.alpaca_data import fetch_daily_bars
 from backtesting.data_adapter import df_to_bt_feed
 from config import calculate_months_between
 from strategies.dca import DollarCostAveraging
-from strategies.trendfollow import TrendFollowingStrategy
-from strategies.meanreversion import MeanReversionStrategy
-from strategies.dip_buyer import DipBuyerStrategy
-from strategies.dinamica import DinamicaStrategy
-from strategies.tacticaltrenddip import TacticalTrendDipStrategy
 from .stages.basic_metrics import BasicMetricsStage
 
 
@@ -126,13 +121,6 @@ class ValidationPipeline:
         strategy_results = []
         for strategy_name, strategy_cls in self.strategies.items():
             print(f"Running {strategy_name}...")
-
-            if strategy_name == "TrendFollowing":
-                strategy_name = "Seguimiento"
-
-            if strategy_name == "MeanReversion":
-                strategy_name = "Reversión"
-
             try:
                 result = self._run_single_strategy(
                     strategy_cls=strategy_cls,
@@ -207,20 +195,6 @@ class ValidationPipeline:
 
         # DCA spreads initial cash evenly over all months
         if strategy_cls == DollarCostAveraging:
-            monthly_invest = self.cash / num_months
-            cerebro.addstrategy(strategy_cls, monthly_invest=monthly_invest)
-        # TrendFollowing: suppress trade logs in comparison mode, pass total_months
-        elif strategy_cls == TrendFollowingStrategy:
-            cerebro.addstrategy(strategy_cls, printlog=False, total_months=num_months)
-        # MeanReversion: suppress trade logs in comparison mode, pass total_months
-        elif strategy_cls == MeanReversionStrategy:
-            cerebro.addstrategy(strategy_cls, printlog=False, total_months=num_months)
-        # DipBuyer: currently DCA baseline, uses monthly_invest
-        # elif strategy_cls == DipBuyerStrategy:
-        #     monthly_invest = self.cash / num_months
-        #     cerebro.addstrategy(strategy_cls, monthly_invest=monthly_invest)
-        # Dinamica: uses monthly_invest calculated from total budget
-        elif strategy_cls == DinamicaStrategy:
             monthly_invest = self.cash / num_months
             cerebro.addstrategy(strategy_cls, monthly_invest=monthly_invest)
         else:
