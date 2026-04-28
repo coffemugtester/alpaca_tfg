@@ -43,7 +43,7 @@ class TacticalMonthlyRedistributed(bt.Strategy):
         bb_devfactor=2.0,
         max_exposure=0.995,
         lookback_peak=252,
-        min_order_cash=1.0,
+        min_order_cash=250.0,
         show_plot=True,
     )
 
