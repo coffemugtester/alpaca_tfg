@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 import backtrader as bt
 import matplotlib.pyplot as plt
 
@@ -36,7 +38,7 @@ class TacticalAtrMonthly(bt.Strategy):
         show_plot=True,
     )
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.close = self.datas[0].close
 
         self.sma_fast = bt.ind.SMA(self.close, period=self.p.sma_fast)
@@ -58,17 +60,17 @@ class TacticalAtrMonthly(bt.Strategy):
             period=self.p.lookback_peak,
         )
 
-        self.initial_cash = None
-        self.last_buy_month = None
-        self.buy_count = 0
+        self.initial_cash: float | None = None
+        self.last_buy_month: tuple[int, int] | None = None
+        self.buy_count: int = 0
 
-        self.dates = []
-        self.cash = []
-        self.position_value = []
-        self.total_value = []
-        self.exposure_pct = []
+        self.dates: list[date] = []
+        self.cash: list[float] = []
+        self.position_value: list[float] = []
+        self.total_value: list[float] = []
+        self.exposure_pct: list[float] = []
 
-    def start(self):
+    def start(self) -> None:
         self.initial_cash = self.broker.getcash()
         print(f"[TacticalTrendDipReserve] Initial cash: ${self.initial_cash:,.2f}")
         print(
@@ -76,29 +78,29 @@ class TacticalAtrMonthly(bt.Strategy):
         )
         print("[TacticalTrendDipReserve] Cooldown: one buy per calendar month")
 
-    def _portfolio_value(self):
+    def _portfolio_value(self) -> float:
         return self.broker.getvalue()
 
-    def _cash(self):
+    def _cash(self) -> float:
         return self.broker.getcash()
 
-    def _invested_value(self):
+    def _invested_value(self) -> float:
         return self._portfolio_value() - self._cash()
 
-    def _current_exposure_pct(self):
+    def _current_exposure_pct(self) -> float:
         value = self._portfolio_value()
         if value <= 0:
             return 0.0
         return self._invested_value() / value
 
-    def _current_year_month(self):
+    def _current_year_month(self) -> tuple[int, int]:
         dt = self.datas[0].datetime.date(0)
         return (dt.year, dt.month)
 
     def _already_bought_this_month(self) -> bool:
         return self.last_buy_month == self._current_year_month()
 
-    def _cap_cash_allowed(self, exposure_cap: float):
+    def _cap_cash_allowed(self, exposure_cap: float) -> float:
         target_invested = self._portfolio_value() * min(
             exposure_cap,
             self.p.max_exposure,
@@ -106,7 +108,7 @@ class TacticalAtrMonthly(bt.Strategy):
         remaining_allowed = target_invested - self._invested_value()
         return max(0.0, min(self._cash(), remaining_allowed))
 
-    def _buy_cash_amount(self, cash_to_use: float, signal_name: str):
+    def _buy_cash_amount(self, cash_to_use: float, signal_name: str) -> None:
         if cash_to_use < self.p.min_order_cash:
             return
 
@@ -140,7 +142,7 @@ class TacticalAtrMonthly(bt.Strategy):
                 f"exposure={self._current_exposure_pct():.1%}"
             )
 
-    def _drawdown_from_peak(self):
+    def _drawdown_from_peak(self) -> float:
         peak = float(self.recent_peak[0])
         price = float(self.close[0])
 
@@ -149,7 +151,7 @@ class TacticalAtrMonthly(bt.Strategy):
 
         return (peak - price) / peak
 
-    def _drawdown_exposure_cap(self, drawdown: float):
+    def _drawdown_exposure_cap(self, drawdown: float) -> float:
         if drawdown >= 0.20:
             return self.p.dd_20_cap
         if drawdown >= 0.15:
@@ -161,7 +163,7 @@ class TacticalAtrMonthly(bt.Strategy):
 
         return self.p.base_exposure_cap
 
-    def next(self):
+    def next(self) -> None:
         dt = self.datas[0].datetime.date(0)
         close = float(self.close[0])
         cash = float(self._cash())

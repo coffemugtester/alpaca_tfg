@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 import backtrader as bt
 import matplotlib.pyplot as plt
 
@@ -12,13 +14,13 @@ class BuyAndHold(bt.Strategy):
     )
 
     def __init__(self) -> None:
-        self.dates = []
-        self.cash = []
-        self.position_value = []
-        self.total_value = []
+        self.dates: list[date] = []
+        self.cash: list[float] = []
+        self.position_value: list[float] = []
+        self.total_value: list[float] = []
 
-        self.entered = False
-        self.order = None
+        self.entered: bool = False
+        self.order: bt.Order | None = None
 
     def prenext_open(self) -> None:
         """Called during warm-up period before next_open()."""

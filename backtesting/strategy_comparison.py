@@ -45,7 +45,7 @@ def run_strategy_comparison(
     commission: float = 0.0002,
     slippage: float = 0.0003,
     show_plots: bool = False,
-    strategies: dict = None,
+    strategies: dict[str, Type[bt.Strategy]] | None = None,
 ) -> dict:
     """
     Run multi-strategy comparison on a single asset.
@@ -83,7 +83,11 @@ def run_strategy_comparison(
     df = fetch_daily_bars(symbol=symbol, start=start, end=end)
     if df is None or len(df) == 0:
         print("ERROR: No data available")
-        return
+        return {
+            "symbol": symbol,
+            "results": {},
+            "initial_cash": cash,
+        }
     print(f"Loaded {len(df)} bars\n")
 
     data_feed = df_to_bt_feed(df)
@@ -411,7 +415,7 @@ def print_summary_table(all_results: list[dict]) -> None:
             returns[name] = ret
 
         # Determine best strategy
-        best_strategy = max(returns, key=returns.get)
+        best_strategy = max(returns, key=lambda x: returns[x])
 
         # Print row
         return_strs = " ".join([f"{returns[name]:>{col_width-1}.2f}%" for name in strategy_names])

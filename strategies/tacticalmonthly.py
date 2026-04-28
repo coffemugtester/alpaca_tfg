@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 import backtrader as bt
 import matplotlib.pyplot as plt
 
@@ -37,7 +39,7 @@ class TacticalMonthlyRedistributed(bt.Strategy):
         show_plot=True,
     )
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.close = self.datas[0].close
 
         self.sma_fast = bt.ind.SMA(self.close, period=self.p.sma_fast)
@@ -54,20 +56,20 @@ class TacticalMonthlyRedistributed(bt.Strategy):
             devfactor=self.p.bb_devfactor,
         )
 
-        self.initial_cash = None
-        self.start_year_month = None
-        self.end_year_month = None
-        self.total_months = None
+        self.initial_cash: float | None = None
+        self.start_year_month: tuple[int, int] | None = None
+        self.end_year_month: tuple[int, int] | None = None
+        self.total_months: int | None = None
 
-        self.last_buy_month = None
-        self.buy_count = 0
+        self.last_buy_month: tuple[int, int] | None = None
+        self.buy_count: int = 0
 
-        self.dates = []
-        self.cash = []
-        self.position_value = []
-        self.total_value = []
+        self.dates: list[date] = []
+        self.cash: list[float] = []
+        self.position_value: list[float] = []
+        self.total_value: list[float] = []
 
-    def start(self):
+    def start(self) -> None:
         self.initial_cash = self.broker.getcash()
 
         start_date = self.datas[0].datetime.date(0)
@@ -87,47 +89,47 @@ class TacticalMonthlyRedistributed(bt.Strategy):
         print(f"[TacticalMonthlyRedistributed] Initial cash: ${self.initial_cash:,.2f}")
         print(f"[TacticalMonthlyRedistributed] Total months: {self.total_months}")
 
-    def _months_between(self, start_ym, end_ym) -> int:
+    def _months_between(self, start_ym: tuple[int, int], end_ym: tuple[int, int]) -> int:
         start_year, start_month = start_ym
         end_year, end_month = end_ym
         return (end_year - start_year) * 12 + (end_month - start_month)
 
-    def _current_year_month(self):
+    def _current_year_month(self) -> tuple[int, int]:
         dt = self.datas[0].datetime.date(0)
         return (dt.year, dt.month)
 
     def _elapsed_months(self) -> int:
         return self._months_between(
-            self.start_year_month,
+            self.start_year_month,  # type: ignore
             self._current_year_month(),
         )
 
     def _remaining_months(self) -> int:
-        return max(1, self.total_months - self._elapsed_months())
+        return max(1, self.total_months - self._elapsed_months())  # type: ignore
 
-    def _portfolio_value(self):
+    def _portfolio_value(self) -> float:
         return self.broker.getvalue()
 
-    def _cash(self):
+    def _cash(self) -> float:
         return self.broker.getcash()
 
-    def _invested_value(self):
+    def _invested_value(self) -> float:
         return self._portfolio_value() - self._cash()
 
-    def _max_allowed_invested(self):
-        return self.initial_cash * self.p.max_exposure
+    def _max_allowed_invested(self) -> float:
+        return self.initial_cash * self.p.max_exposure  # type: ignore
 
-    def _remaining_deployable_cash(self):
+    def _remaining_deployable_cash(self) -> float:
         allowed = self._max_allowed_invested() - self._invested_value()
         return max(0.0, min(self._cash(), allowed))
 
-    def _monthly_budget(self):
+    def _monthly_budget(self) -> float:
         return self._remaining_deployable_cash() / self._remaining_months()
 
     def _already_bought_this_month(self) -> bool:
         return self.last_buy_month == self._current_year_month()
 
-    def _buy_monthly_budget(self, signal_name: str):
+    def _buy_monthly_budget(self, signal_name: str) -> None:
         if self._already_bought_this_month():
             return
 
@@ -164,7 +166,7 @@ class TacticalMonthlyRedistributed(bt.Strategy):
                 f"cash=${self._cash():.2f}"
             )
 
-    def next(self):
+    def next(self) -> None:
         dt = self.datas[0].datetime.date(0)
         close = float(self.close[0])
         cash = float(self._cash())

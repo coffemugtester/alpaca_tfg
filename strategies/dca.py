@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 import backtrader as bt
 import matplotlib.pyplot as plt
 
@@ -26,14 +28,14 @@ class DollarCostAveraging(bt.Strategy):
 
     def __init__(self) -> None:
         # series para métricas
-        self.dates = []
-        self.cash = []
-        self.position_value = []
-        self.total_value = []
+        self.dates: list[date] = []
+        self.cash: list[float] = []
+        self.position_value: list[float] = []
+        self.total_value: list[float] = []
 
         # para detectar cambio de mes (evitar comprar múltiples veces en el mismo mes)
-        self._last_year = None
-        self._last_month = None
+        self._last_year: int | None = None
+        self._last_month: int | None = None
 
     def next(self) -> None:
         # Barra actual (ya cerrada)
