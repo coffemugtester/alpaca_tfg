@@ -8,23 +8,15 @@ import matplotlib.pyplot as plt
 
 class TacticalMonthlyRedistributed(bt.Strategy):
     """
-    Tactical monthly strategy with DCA-style capital restriction.
+    Tactical DCA with accumulated monthly savings.
 
-    Capital is available from day 1, but deployment is constrained monthly.
-
-    Rule:
-    - Divide remaining deployable capital across remaining months.
-    - Maximum one buy per month.
-    - If no signal occurs in a month, capital is not invested.
-    - Next month, the monthly budget is recalculated over remaining months.
-
-    Signals:
-    - Bull market filter: Close > SMA200 and SMA50 > SMA200
-    - Dip: RSI < threshold
-    - Momentum: MACD crosses above signal
-    - Breakout: Close > Upper Bollinger Band
-
-    No selling logic.
+    Logic:
+    - Simulates a DCA investor with a fixed monthly contribution.
+    - Each month, one monthly contribution becomes available.
+    - If there is no technical signal, the contribution remains in cash.
+    - When a valid signal appears, the accumulated cash reserve is invested.
+    - Maximum one buy per calendar month.
+    - No selling logic.
     """
 
     params = dict(
@@ -35,7 +27,7 @@ class TacticalMonthlyRedistributed(bt.Strategy):
         bb_period=20,
         bb_devfactor=2.0,
         max_exposure=0.995,
-        min_order_cash=250.0,
+        min_order_cash=1.0,
         show_plot=True,
     )
 
@@ -44,7 +36,6 @@ class TacticalMonthlyRedistributed(bt.Strategy):
 
         self.sma_fast = bt.ind.SMA(self.close, period=self.p.sma_fast)
         self.sma_slow = bt.ind.SMA(self.close, period=self.p.sma_slow)
-
         self.rsi = bt.ind.RSI(self.close, period=self.p.rsi_period)
 
         self.macd = bt.ind.MACD(self.close)
@@ -60,7 +51,10 @@ class TacticalMonthlyRedistributed(bt.Strategy):
         self.start_year_month: tuple[int, int] | None = None
         self.end_year_month: tuple[int, int] | None = None
         self.total_months: int | None = None
+        self.monthly_contribution: float | None = None
 
+        self.current_month: tuple[int, int] | None = None
+        self.accumulated_reserve: float = 0.0
         self.last_buy_month: tuple[int, int] | None = None
         self.buy_count: int = 0
 
@@ -68,28 +62,41 @@ class TacticalMonthlyRedistributed(bt.Strategy):
         self.cash: list[float] = []
         self.position_value: list[float] = []
         self.total_value: list[float] = []
+        self.reserve_history: list[float] = []
 
     def start(self) -> None:
         self.initial_cash = self.broker.getcash()
 
-        start_date = self.datas[0].datetime.date(0)
-        end_date = self.datas[0].datetime.date(-1)
+        data_dates = [
+            bt.num2date(self.datas[0].datetime.array[i]).date()
+            for i in range(len(self.datas[0].datetime.array))
+        ]
+
+        start_date = data_dates[0]
+        end_date = data_dates[-1]
 
         self.start_year_month = (start_date.year, start_date.month)
         self.end_year_month = (end_date.year, end_date.month)
 
         self.total_months = (
-            self._months_between(
-                self.start_year_month,
-                self.end_year_month,
-            )
-            + 1
+            self._months_between(self.start_year_month, self.end_year_month) + 1
         )
 
-        print(f"[TacticalMonthlyRedistributed] Initial cash: ${self.initial_cash:,.2f}")
-        print(f"[TacticalMonthlyRedistributed] Total months: {self.total_months}")
+        deployable_cash = self.initial_cash * self.p.max_exposure
+        self.monthly_contribution = deployable_cash / self.total_months
 
-    def _months_between(self, start_ym: tuple[int, int], end_ym: tuple[int, int]) -> int:
+        print(f"[TacticalAccumulatedDCA] Initial cash: ${self.initial_cash:,.2f}")
+        print(f"[TacticalAccumulatedDCA] Start month: {self.start_year_month}")
+        print(f"[TacticalAccumulatedDCA] End month: {self.end_year_month}")
+        print(f"[TacticalAccumulatedDCA] Total months: {self.total_months}")
+        print(
+            f"[TacticalAccumulatedDCA] Monthly contribution: "
+            f"${self.monthly_contribution:,.2f}"
+        )
+
+    def _months_between(
+        self, start_ym: tuple[int, int], end_ym: tuple[int, int]
+    ) -> int:
         start_year, start_month = start_ym
         end_year, end_month = end_ym
         return (end_year - start_year) * 12 + (end_month - start_month)
@@ -98,14 +105,21 @@ class TacticalMonthlyRedistributed(bt.Strategy):
         dt = self.datas[0].datetime.date(0)
         return (dt.year, dt.month)
 
-    def _elapsed_months(self) -> int:
-        return self._months_between(
-            self.start_year_month,  # type: ignore
-            self._current_year_month(),
-        )
+    def _process_monthly_contribution(self) -> None:
+        ym = self._current_year_month()
 
-    def _remaining_months(self) -> int:
-        return max(1, self.total_months - self._elapsed_months())  # type: ignore
+        if self.current_month == ym:
+            return
+
+        self.current_month = ym
+
+        if self.monthly_contribution is None:
+            return
+
+        self.accumulated_reserve += self.monthly_contribution
+
+    def _already_bought_this_month(self) -> bool:
+        return self.last_buy_month == self._current_year_month()
 
     def _portfolio_value(self) -> float:
         return self.broker.getvalue()
@@ -123,50 +137,48 @@ class TacticalMonthlyRedistributed(bt.Strategy):
         allowed = self._max_allowed_invested() - self._invested_value()
         return max(0.0, min(self._cash(), allowed))
 
-    def _monthly_budget(self) -> float:
-        return self._remaining_deployable_cash() / self._remaining_months()
-
-    def _already_bought_this_month(self) -> bool:
-        return self.last_buy_month == self._current_year_month()
-
-    def _buy_monthly_budget(self, signal_name: str) -> None:
+    def _buy_accumulated_reserve(self, signal_name: str) -> None:
         if self._already_bought_this_month():
             return
 
-        cash_to_use = self._monthly_budget()
+        cash_to_use = min(
+            self.accumulated_reserve,
+            self._remaining_deployable_cash(),
+            self._cash(),
+        )
 
         if cash_to_use < self.p.min_order_cash:
             return
 
         price = float(self.close[0])
-        size = int(cash_to_use / price)
+        if price <= 0:
+            return
+
+        size = cash_to_use / price
 
         if size <= 0:
             return
 
-        order_cash = size * price
-
-        if order_cash < self.p.min_order_cash:
-            return
-
-        current_month = self._current_year_month()
         current_date = self.datas[0].datetime.date(0)
 
         self.buy(size=size)
         self.buy_count += 1
-        self.last_buy_month = current_month
+        self.last_buy_month = self._current_year_month()
+        self.accumulated_reserve -= cash_to_use
 
         if self.buy_count <= 20:
             print(
-                f"[TacticalMonthlyRedistributed] Buy #{self.buy_count} | "
+                f"[TacticalAccumulatedDCA] Buy #{self.buy_count} | "
                 f"{signal_name} | {current_date} | "
-                f"size={size} | price=${price:.2f} | "
-                f"monthly_budget=${cash_to_use:.2f} | "
-                f"remaining_months={self._remaining_months()} | "
+                f"size={size:.6f} | price=${price:.2f} | "
+                f"invested=${cash_to_use:.2f} | "
+                f"remaining_reserve=${self.accumulated_reserve:.2f} | "
                 f"cash=${self._cash():.2f}"
             )
 
     def next(self) -> None:
+        self._process_monthly_contribution()
+
         dt = self.datas[0].datetime.date(0)
         close = float(self.close[0])
         cash = float(self._cash())
@@ -178,17 +190,17 @@ class TacticalMonthlyRedistributed(bt.Strategy):
         self.cash.append(cash)
         self.position_value.append(pos_value)
         self.total_value.append(value)
+        self.reserve_history.append(self.accumulated_reserve)
 
-        min_bars = max(
-            self.p.sma_slow,
-            self.p.rsi_period,
-            self.p.bb_period,
-        )
+        min_bars = max(self.p.sma_slow, self.p.rsi_period, self.p.bb_period)
 
         if len(self) < min_bars:
             return
 
         if self._remaining_deployable_cash() < self.p.min_order_cash:
+            return
+
+        if self.accumulated_reserve < self.p.min_order_cash:
             return
 
         if self._already_bought_this_month():
@@ -201,23 +213,20 @@ class TacticalMonthlyRedistributed(bt.Strategy):
         if not bullish_trend:
             return
 
-        # Signal 1: RSI dip
         if self.rsi[0] < self.p.dip_rsi:
-            self._buy_monthly_budget("RSI Dip")
+            self._buy_accumulated_reserve("RSI Dip")
             return
 
-        # Signal 2: MACD momentum
         momentum_resume = self.macd_cross[0] > 0 and price > self.sma_fast[0]
 
         if momentum_resume:
-            self._buy_monthly_budget("MACD Momentum")
+            self._buy_accumulated_reserve("MACD Momentum")
             return
 
-        # Signal 3: Bollinger breakout
         bollinger_breakout = price > self.bbands.top[0]
 
         if bollinger_breakout:
-            self._buy_monthly_budget("Bollinger Breakout")
+            self._buy_accumulated_reserve("Bollinger Breakout")
 
     def stop(self) -> None:
         final_value = self.broker.getvalue()
@@ -225,21 +234,23 @@ class TacticalMonthlyRedistributed(bt.Strategy):
         position = self.getposition()
 
         print(
-            f"[TacticalMonthlyRedistributed] stop() called - "
+            f"[TacticalAccumulatedDCA] stop() called - "
             f"total_buys={self.buy_count}, "
             f"final_value=${final_value:,.2f}, "
             f"final_cash=${final_cash:,.2f}, "
-            f"position_size={position.size}"
+            f"remaining_reserve=${self.accumulated_reserve:,.2f}, "
+            f"position_size={position.size:.6f}"
         )
 
         plt.figure(figsize=(10, 6))
         plt.plot(self.dates, self.cash, label="Cash")
         plt.plot(self.dates, self.position_value, label="Position Value")
         plt.plot(self.dates, self.total_value, label="Total Portfolio Value")
+        plt.plot(self.dates, self.reserve_history, label="Accumulated Reserve")
 
         plt.xlabel("Date")
         plt.ylabel("Value ($)")
-        plt.title("TacticalMonthlyRedistributed - Portfolio Breakdown")
+        plt.title("TacticalAccumulatedDCA - Portfolio Breakdown")
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
