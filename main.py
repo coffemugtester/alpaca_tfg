@@ -23,8 +23,8 @@ from strategies.tacticalatrmonthly import TacticalAtrMonthly
 STRATEGY_REGISTRY = {
     "dca": ("DCA", DollarCostAveraging),
     "bnh": ("Buy & Hold", BuyAndHold),
-    "tacticalmonthly": ("TacticalMonthly", TacticalMonthlyRedistributed),
-    "tacticalatrmonthly": ("TacticalATRMonthly", TacticalAtrMonthly),
+    "tacticalmonthly": ("DCA Táctico", TacticalMonthlyRedistributed),
+    "tacticalatrmonthly": ("Corrección Táctica", TacticalAtrMonthly),
 }
 
 # Default assets for multi-asset comparison mode
