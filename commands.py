@@ -214,6 +214,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Slippage percentage (default: 0.03%%)",
     )
 
+    # ============================================================
+    # Subcommand: analyze-volatility
+    # Analyze volatility metrics across multiple assets
+    # ============================================================
+    volatility_parser = subparsers.add_parser(
+        "analyze-volatility",
+        help="Analyze intraday volatility metrics across multiple assets",
+    )
+    volatility_parser.add_argument(
+        "--symbols",
+        type=str,
+        nargs="+",
+        default=None,
+        help=f"List of ticker symbols (default: {', '.join(DEFAULT_ASSETS)})",
+    )
+    volatility_parser.add_argument(
+        "--start",
+        type=str,
+        default="2016-01-01",
+        help="Start date in YYYY-MM-DD format (default: 2016-01-01)",
+    )
+    volatility_parser.add_argument(
+        "--end",
+        type=str,
+        default="2026-01-01",
+        help="End date in YYYY-MM-DD format (default: 2026-01-01)",
+    )
+
     return parser
 
 
@@ -337,3 +365,48 @@ def handle_compare_multi_command(
     # Print summary table if multiple assets
     if len(symbols) > 1:
         print_summary_table(all_results)
+
+
+def handle_analyze_volatility_command(
+    args: Namespace,
+    start,
+    end,
+    default_assets: list[str],
+):
+    """
+    Handle the 'analyze-volatility' subcommand: analyze intraday volatility across multiple assets.
+
+    Args:
+        args: Parsed command-line arguments
+        start: Start datetime
+        end: End datetime
+        default_assets: List of default asset symbols to use if --symbols not provided
+    """
+    from data.volatility_analyzer import analyze_symbol_volatility
+    from data.volatility_export import export_volatility_to_csv, print_volatility_summary_table
+
+    # Determine which symbols to analyze
+    if args.symbols is None:
+        symbols = default_assets
+        print(
+            f"\nNo --symbols specified. Analyzing volatility for {len(symbols)} default assets:"
+        )
+        print(f"{', '.join(symbols)}\n")
+    else:
+        symbols = args.symbols
+
+    # Analyze volatility for each symbol
+    all_results = []
+    for symbol in symbols:
+        results = analyze_symbol_volatility(
+            symbol=symbol,
+            start=start,
+            end=end,
+        )
+        if results:
+            all_results.append(results)
+            # Export results for this symbol
+            export_volatility_to_csv(results)
+
+    # Print summary table
+    print_volatility_summary_table(all_results)

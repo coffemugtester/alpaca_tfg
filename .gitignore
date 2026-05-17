@@ -6,3 +6,4 @@ __pycache__/
 .devcontainer
 .gstack/
 comparison_*
+notes.md

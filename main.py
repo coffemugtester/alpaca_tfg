@@ -11,6 +11,7 @@ from commands import (
     handle_single_command,
     handle_compare_single_command,
     handle_compare_multi_command,
+    handle_analyze_volatility_command,
     DEFAULT_ASSETS,
 )
 from config import parse_date
@@ -40,6 +41,9 @@ def main():
     elif args.command == "compare-multi":
         strategies = get_strategy_map()
         handle_compare_multi_command(args, strategies, start, end, DEFAULT_ASSETS)
+
+    elif args.command == "analyze-volatility":
+        handle_analyze_volatility_command(args, start, end, DEFAULT_ASSETS)
 
 
 if __name__ == "__main__":
