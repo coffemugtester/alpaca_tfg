@@ -266,7 +266,7 @@ def _export_to_csv(
     results: dict,
     initial_cash: float,
 ) -> None:
-    """Export comparison results to CSV in append mode.
+    """Export comparison results to CSV in append mode with delta columns vs baselines.
 
     Args:
         symbol: Asset symbol
@@ -282,7 +282,31 @@ def _export_to_csv(
     # Check if file exists to determine if we need to write header
     file_exists = csv_path.exists()
 
-    # Prepare rows
+    # Extract baseline metrics (Buy & Hold and DCA)
+    baseline_metrics = {}
+    for baseline_name in ["Buy & Hold", "DCA"]:
+        if baseline_name in results:
+            result = results[baseline_name]
+            total_return_pct = (
+                (result["final_value"] - initial_cash) / initial_cash * 100
+                if result["final_value"] > 0
+                else 0.0
+            )
+            max_dd_pct = (
+                result["max_drawdown"] * 100 if result["max_drawdown"] is not None else 0.0
+            )
+            sharpe = result["sharpe_ratio"] if result["sharpe_ratio"] is not None else 0.0
+
+            baseline_metrics[baseline_name] = {
+                "final_value": result["final_value"],
+                "total_return_pct": total_return_pct,
+                "sharpe_ratio": sharpe,
+                "max_drawdown_pct": max_dd_pct,
+                "unused_cash": result["final_cash"],
+                "order_count": result["order_count"],
+            }
+
+    # Prepare rows with deltas
     rows = []
     for strategy_name, result in results.items():
         total_return_pct = (
@@ -295,16 +319,62 @@ def _export_to_csv(
         )
         sharpe = result["sharpe_ratio"] if result["sharpe_ratio"] is not None else 0.0
 
+        # Calculate deltas vs Buy & Hold
+        if "Buy & Hold" in baseline_metrics:
+            bnh = baseline_metrics["Buy & Hold"]
+            final_value_vs_bnh = result["final_value"] - bnh["final_value"] if strategy_name != "Buy & Hold" else 0.0
+            total_return_vs_bnh = total_return_pct - bnh["total_return_pct"] if strategy_name != "Buy & Hold" else 0.0
+            sharpe_vs_bnh = sharpe - bnh["sharpe_ratio"] if strategy_name != "Buy & Hold" else 0.0
+            max_dd_vs_bnh = max_dd_pct - bnh["max_drawdown_pct"] if strategy_name != "Buy & Hold" else 0.0
+            unused_cash_vs_bnh = result["final_cash"] - bnh["unused_cash"] if strategy_name != "Buy & Hold" else 0.0
+            order_count_vs_bnh = result["order_count"] - bnh["order_count"] if strategy_name != "Buy & Hold" else 0
+        else:
+            final_value_vs_bnh = 0.0
+            total_return_vs_bnh = 0.0
+            sharpe_vs_bnh = 0.0
+            max_dd_vs_bnh = 0.0
+            unused_cash_vs_bnh = 0.0
+            order_count_vs_bnh = 0
+
+        # Calculate deltas vs DCA
+        if "DCA" in baseline_metrics:
+            dca = baseline_metrics["DCA"]
+            final_value_vs_dca = result["final_value"] - dca["final_value"] if strategy_name != "DCA" else 0.0
+            total_return_vs_dca = total_return_pct - dca["total_return_pct"] if strategy_name != "DCA" else 0.0
+            sharpe_vs_dca = sharpe - dca["sharpe_ratio"] if strategy_name != "DCA" else 0.0
+            max_dd_vs_dca = max_dd_pct - dca["max_drawdown_pct"] if strategy_name != "DCA" else 0.0
+            unused_cash_vs_dca = result["final_cash"] - dca["unused_cash"] if strategy_name != "DCA" else 0.0
+            order_count_vs_dca = result["order_count"] - dca["order_count"] if strategy_name != "DCA" else 0
+        else:
+            final_value_vs_dca = 0.0
+            total_return_vs_dca = 0.0
+            sharpe_vs_dca = 0.0
+            max_dd_vs_dca = 0.0
+            unused_cash_vs_dca = 0.0
+            order_count_vs_dca = 0
+
         rows.append(
             {
                 "asset": symbol,
                 "strategy": strategy_name,
                 "final_value": f"{result['final_value']:.2f}",
+                "final_value_vs_bnh": f"{final_value_vs_bnh:.2f}",
+                "final_value_vs_dca": f"{final_value_vs_dca:.2f}",
                 "total_return_pct": f"{total_return_pct:.2f}",
+                "total_return_pct_vs_bnh": f"{total_return_vs_bnh:.2f}",
+                "total_return_pct_vs_dca": f"{total_return_vs_dca:.2f}",
                 "sharpe_ratio": f"{sharpe:.3f}",
+                "sharpe_ratio_vs_bnh": f"{sharpe_vs_bnh:.3f}",
+                "sharpe_ratio_vs_dca": f"{sharpe_vs_dca:.3f}",
                 "max_drawdown_pct": f"{max_dd_pct:.2f}",
+                "max_drawdown_pct_vs_bnh": f"{max_dd_vs_bnh:.2f}",
+                "max_drawdown_pct_vs_dca": f"{max_dd_vs_dca:.2f}",
                 "unused_cash": f"{result['final_cash']:.2f}",
+                "unused_cash_vs_bnh": f"{unused_cash_vs_bnh:.2f}",
+                "unused_cash_vs_dca": f"{unused_cash_vs_dca:.2f}",
                 "order_count": result["order_count"],
+                "order_count_vs_bnh": order_count_vs_bnh,
+                "order_count_vs_dca": order_count_vs_dca,
             }
         )
 
@@ -314,11 +384,23 @@ def _export_to_csv(
             "asset",
             "strategy",
             "final_value",
+            "final_value_vs_bnh",
+            "final_value_vs_dca",
             "total_return_pct",
+            "total_return_pct_vs_bnh",
+            "total_return_pct_vs_dca",
             "sharpe_ratio",
+            "sharpe_ratio_vs_bnh",
+            "sharpe_ratio_vs_dca",
             "max_drawdown_pct",
+            "max_drawdown_pct_vs_bnh",
+            "max_drawdown_pct_vs_dca",
             "unused_cash",
+            "unused_cash_vs_bnh",
+            "unused_cash_vs_dca",
             "order_count",
+            "order_count_vs_bnh",
+            "order_count_vs_dca",
         ]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
@@ -378,7 +460,8 @@ def print_summary_table(all_results: list[dict]) -> None:
     """
     Print summary table for multi-asset comparison.
 
-    Shows total return % for each asset × strategy combination.
+    Shows total return % for each asset × strategy combination, with delta
+    columns comparing tactical strategies to Buy & Hold and DCA baselines.
 
     Args:
         all_results: List of result dicts from run_strategy_comparison()
@@ -389,17 +472,36 @@ def print_summary_table(all_results: list[dict]) -> None:
     # Extract strategy names from first result
     first_result = all_results[0]
     strategy_names = list(first_result["results"].keys())
-    col_width = 16
 
-    print("\n" + "=" * 140)
-    print("MULTI-ASSET SUMMARY")
-    print("=" * 140)
+    # Identify baseline and tactical strategies
+    baseline_names = ["DCA", "Buy & Hold"]
+    tactical_names = [name for name in strategy_names if name not in baseline_names]
 
-    # Header
-    strategy_headers = " ".join([f"{name + ' Return':>{col_width}}" for name in strategy_names])
-    header = f"{'Asset':<8} {strategy_headers} {'Best Strategy':>15}"
+    col_width = 12
+    delta_width = 10
+
+    print("\n" + "=" * 200)
+    print("MULTI-ASSET SUMMARY (with deltas vs baselines)")
+    print("=" * 200)
+
+    # Build header
+    header_parts = [f"{'Asset':<8}"]
+
+    # Baseline strategy columns
+    for name in baseline_names:
+        if name in strategy_names:
+            header_parts.append(f"{name:>{col_width}}")
+
+    # Tactical strategy columns with deltas
+    for name in tactical_names:
+        header_parts.append(f"{name:>{col_width}}")
+        header_parts.append(f"{'vs BnH':>{delta_width}}")
+        header_parts.append(f"{'vs DCA':>{delta_width}}")
+
+    header_parts.append(f"{'Best':>15}")
+    header = " ".join(header_parts)
     print(header)
-    print("-" * 140)
+    print("-" * 200)
 
     # Rows: one per asset
     for result in all_results:
@@ -414,12 +516,43 @@ def print_summary_table(all_results: list[dict]) -> None:
             ret = ((final_value - initial_cash) / initial_cash) * 100
             returns[name] = ret
 
+        # Get baseline returns
+        bnh_return = returns.get("Buy & Hold", 0.0)
+        dca_return = returns.get("DCA", 0.0)
+
         # Determine best strategy
         best_strategy = max(returns, key=lambda x: returns[x])
 
-        # Print row
-        return_strs = " ".join([f"{returns[name]:>{col_width-1}.2f}%" for name in strategy_names])
-        print(f"{symbol:<8} {return_strs} {best_strategy:>15}")
+        # Build row
+        row_parts = [f"{symbol:<8}"]
 
-    print("=" * 140)
+        # Baseline returns
+        for name in baseline_names:
+            if name in strategy_names:
+                row_parts.append(f"{returns[name]:>{col_width-1}.2f}%")
+
+        # Tactical returns with deltas
+        for name in tactical_names:
+            ret = returns[name]
+            delta_bnh = ret - bnh_return
+            delta_dca = ret - dca_return
+
+            row_parts.append(f"{ret:>{col_width-1}.2f}%")
+            row_parts.append(f"{_format_delta(delta_bnh):>{delta_width}}")
+            row_parts.append(f"{_format_delta(delta_dca):>{delta_width}}")
+
+        row_parts.append(f"{best_strategy:>15}")
+        print(" ".join(row_parts))
+
+    print("=" * 200)
     print(f"\nAll results exported to: global_comparison/comparison_results.csv\n")
+
+
+def _format_delta(delta: float) -> str:
+    """Format delta percentage with +/- sign."""
+    if delta > 0:
+        return f"+{delta:.1f}%"
+    elif delta < 0:
+        return f"{delta:.1f}%"
+    else:
+        return "0.0%"
