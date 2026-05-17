@@ -28,7 +28,15 @@ STRATEGY_REGISTRY = {
 }
 
 # Default assets for multi-asset comparison mode
-DEFAULT_ASSETS = ["SPY", "QQQ", "IWM", "GLD", "TLT", "AAPL", "AMD", "XLE"]
+DEFAULT_ASSETS = [
+    # Indices & ETFs
+    "SPY", "QQQ", "IWM", "GLD", "TLT", "XLE",
+    # Tech
+    "AAPL", "AMD",
+    # Travel Services
+    "BKNG", "RCL", "CCL", "EXPE", "NCLH",
+    "MMYT", "TNL", "LIND", "TRIP", 
+]
 
 
 def parse_args():
