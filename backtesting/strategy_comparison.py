@@ -79,7 +79,7 @@ def run_strategy_comparison(
     print("=" * 120 + "\n")
 
     # Fetch data once
-    print(f"Fetching data...")
+    print("Fetching data...")
     df = fetch_daily_bars(symbol=symbol, start=start, end=end)
     if df is None or len(df) == 0:
         print("ERROR: No data available")
@@ -152,7 +152,9 @@ def _run_single_strategy(
 
     # Add strategy with appropriate parameters
     if strategy_cls == DollarCostAveraging:
-        cerebro.addstrategy(strategy_cls, monthly_invest=monthly_invest, show_plot=show_plots)
+        cerebro.addstrategy(
+            strategy_cls, monthly_invest=monthly_invest, show_plot=show_plots
+        )
     else:
         # BuyAndHold, TacticalMonthly, TacticalATRMonthly
         cerebro.addstrategy(strategy_cls, show_plot=show_plots)
@@ -212,20 +214,26 @@ def _print_comparison(results: dict, initial_cash: float) -> None:
 
     # Calculate column width based on number of strategies
     strategy_names = list(results.keys())
-    num_strategies = len(strategy_names)
     col_width = 15
 
     # Print header
-    header = f"{'Metric':<20} " + " ".join([f"{name:>{col_width}}" for name in strategy_names])
+    header = f"{'Metric':<20} " + " ".join(
+        [f"{name:>{col_width}}" for name in strategy_names]
+    )
     print(header)
     print("-" * 140)
 
     # Final Value
-    final_values = [f"${results[name]['final_value']:>{col_width-1},.2f}" for name in strategy_names]
+    final_values = [
+        f"${results[name]['final_value']:>{col_width-1},.2f}" for name in strategy_names
+    ]
     print(f"{'Final Value':<20} " + " ".join(final_values))
 
     # Total Return
-    returns = [((results[name]["final_value"] - initial_cash) / initial_cash) * 100 for name in strategy_names]
+    returns = [
+        ((results[name]["final_value"] - initial_cash) / initial_cash) * 100
+        for name in strategy_names
+    ]
     return_strs = [f"{ret:>{col_width-1}.2f}%" for ret in returns]
     print(f"{'Total Return %':<20} " + " ".join(return_strs))
 
@@ -250,11 +258,15 @@ def _print_comparison(results: dict, initial_cash: float) -> None:
     print(f"{'Max Drawdown':<20} " + " ".join(dd_strs))
 
     # Unused Cash
-    cash_strs = [f"${results[name]['final_cash']:>{col_width-1},.2f}" for name in strategy_names]
+    cash_strs = [
+        f"${results[name]['final_cash']:>{col_width-1},.2f}" for name in strategy_names
+    ]
     print(f"{'Unused Cash':<20} " + " ".join(cash_strs))
 
     # Order Count
-    order_strs = [f"{results[name]['order_count']:>{col_width}}" for name in strategy_names]
+    order_strs = [
+        f"{results[name]['order_count']:>{col_width}}" for name in strategy_names
+    ]
     print(f"{'Order Count':<20} " + " ".join(order_strs))
 
     print("=" * 140)
@@ -293,9 +305,13 @@ def _export_to_csv(
                 else 0.0
             )
             max_dd_pct = (
-                result["max_drawdown"] * 100 if result["max_drawdown"] is not None else 0.0
+                result["max_drawdown"] * 100
+                if result["max_drawdown"] is not None
+                else 0.0
             )
-            sharpe = result["sharpe_ratio"] if result["sharpe_ratio"] is not None else 0.0
+            sharpe = (
+                result["sharpe_ratio"] if result["sharpe_ratio"] is not None else 0.0
+            )
 
             baseline_metrics[baseline_name] = {
                 "final_value": result["final_value"],
@@ -322,12 +338,34 @@ def _export_to_csv(
         # Calculate deltas vs Buy & Hold
         if "Buy & Hold" in baseline_metrics:
             bnh = baseline_metrics["Buy & Hold"]
-            final_value_vs_bnh = result["final_value"] - bnh["final_value"] if strategy_name != "Buy & Hold" else 0.0
-            total_return_vs_bnh = total_return_pct - bnh["total_return_pct"] if strategy_name != "Buy & Hold" else 0.0
-            sharpe_vs_bnh = sharpe - bnh["sharpe_ratio"] if strategy_name != "Buy & Hold" else 0.0
-            max_dd_vs_bnh = max_dd_pct - bnh["max_drawdown_pct"] if strategy_name != "Buy & Hold" else 0.0
-            unused_cash_vs_bnh = result["final_cash"] - bnh["unused_cash"] if strategy_name != "Buy & Hold" else 0.0
-            order_count_vs_bnh = result["order_count"] - bnh["order_count"] if strategy_name != "Buy & Hold" else 0
+            final_value_vs_bnh = (
+                result["final_value"] - bnh["final_value"]
+                if strategy_name != "Buy & Hold"
+                else 0.0
+            )
+            total_return_vs_bnh = (
+                total_return_pct - bnh["total_return_pct"]
+                if strategy_name != "Buy & Hold"
+                else 0.0
+            )
+            sharpe_vs_bnh = (
+                sharpe - bnh["sharpe_ratio"] if strategy_name != "Buy & Hold" else 0.0
+            )
+            max_dd_vs_bnh = (
+                max_dd_pct - bnh["max_drawdown_pct"]
+                if strategy_name != "Buy & Hold"
+                else 0.0
+            )
+            unused_cash_vs_bnh = (
+                result["final_cash"] - bnh["unused_cash"]
+                if strategy_name != "Buy & Hold"
+                else 0.0
+            )
+            order_count_vs_bnh = (
+                result["order_count"] - bnh["order_count"]
+                if strategy_name != "Buy & Hold"
+                else 0
+            )
         else:
             final_value_vs_bnh = 0.0
             total_return_vs_bnh = 0.0
@@ -339,12 +377,32 @@ def _export_to_csv(
         # Calculate deltas vs DCA
         if "DCA" in baseline_metrics:
             dca = baseline_metrics["DCA"]
-            final_value_vs_dca = result["final_value"] - dca["final_value"] if strategy_name != "DCA" else 0.0
-            total_return_vs_dca = total_return_pct - dca["total_return_pct"] if strategy_name != "DCA" else 0.0
-            sharpe_vs_dca = sharpe - dca["sharpe_ratio"] if strategy_name != "DCA" else 0.0
-            max_dd_vs_dca = max_dd_pct - dca["max_drawdown_pct"] if strategy_name != "DCA" else 0.0
-            unused_cash_vs_dca = result["final_cash"] - dca["unused_cash"] if strategy_name != "DCA" else 0.0
-            order_count_vs_dca = result["order_count"] - dca["order_count"] if strategy_name != "DCA" else 0
+            final_value_vs_dca = (
+                result["final_value"] - dca["final_value"]
+                if strategy_name != "DCA"
+                else 0.0
+            )
+            total_return_vs_dca = (
+                total_return_pct - dca["total_return_pct"]
+                if strategy_name != "DCA"
+                else 0.0
+            )
+            sharpe_vs_dca = (
+                sharpe - dca["sharpe_ratio"] if strategy_name != "DCA" else 0.0
+            )
+            max_dd_vs_dca = (
+                max_dd_pct - dca["max_drawdown_pct"] if strategy_name != "DCA" else 0.0
+            )
+            unused_cash_vs_dca = (
+                result["final_cash"] - dca["unused_cash"]
+                if strategy_name != "DCA"
+                else 0.0
+            )
+            order_count_vs_dca = (
+                result["order_count"] - dca["order_count"]
+                if strategy_name != "DCA"
+                else 0
+            )
         else:
             final_value_vs_dca = 0.0
             total_return_vs_dca = 0.0
@@ -545,7 +603,7 @@ def print_summary_table(all_results: list[dict]) -> None:
         print(" ".join(row_parts))
 
     print("=" * 200)
-    print(f"\nAll results exported to: global_comparison/comparison_results.csv\n")
+    print("\nAll results exported to: global_comparison/comparison_results.csv\n")
 
 
 def _format_delta(delta: float) -> str:
