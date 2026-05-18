@@ -23,15 +23,18 @@ from strategies.dca import DollarCostAveraging
 from strategies.buy_and_hold import BuyAndHold
 from strategies.tacticalmonthly import TacticalMonthlyRedistributed
 from strategies.tacticalatrmonthly import TacticalAtrMonthly
+from strategies.intraday_volatility_bands import IntradayVolatilityBands
 
 
 # Canonical strategy registry - single source of truth
-# Maps CLI names (lowercase) to (display name, strategy class) tuples
+# Maps CLI names (lowercase) to (display name, strategy class, timeframe) tuples
+# Timeframe: 'daily' or 'minute'
 STRATEGY_REGISTRY = {
-    "dca": ("DCA", DollarCostAveraging),
-    "bnh": ("Buy & Hold", BuyAndHold),
-    "tacticalmonthly": ("DCA Táctico", TacticalMonthlyRedistributed),
-    "tacticalatrmonthly": ("Corrección Táctica", TacticalAtrMonthly),
+    "dca": ("DCA", DollarCostAveraging, "daily"),
+    "bnh": ("Buy & Hold", BuyAndHold, "daily"),
+    "tacticalmonthly": ("DCA Táctico", TacticalMonthlyRedistributed, "daily"),
+    "tacticalatrmonthly": ("Corrección Táctica", TacticalAtrMonthly, "daily"),
+    "intradayvol": ("Intraday Vol Bands", IntradayVolatilityBands, "minute"),
 }
 
 # Default assets for multi-asset comparison mode
@@ -48,15 +51,29 @@ DEFAULT_ASSETS = [
 
 def get_strategy_class(strategy_name: str):
     """Get a single strategy class by CLI name (e.g., 'dca' -> DollarCostAveraging)."""
-    _display_name, strategy_cls = STRATEGY_REGISTRY[strategy_name]
+    _display_name, strategy_cls, _timeframe = STRATEGY_REGISTRY[strategy_name]
     return strategy_cls
+
+
+def get_strategy_timeframe(strategy_name: str) -> str:
+    """Get the required timeframe for a strategy ('daily' or 'minute')."""
+    _display_name, _strategy_cls, timeframe = STRATEGY_REGISTRY[strategy_name]
+    return timeframe
 
 
 def get_strategy_map():
     """Get all registered strategies as {display_name: strategy_class} dict."""
     return {
         display_name: strategy_cls
-        for display_name, strategy_cls in STRATEGY_REGISTRY.values()
+        for display_name, strategy_cls, _timeframe in STRATEGY_REGISTRY.values()
+    }
+
+
+def get_strategy_map_with_timeframes():
+    """Get all registered strategies as {display_name: (strategy_class, timeframe)} dict."""
+    return {
+        display_name: (strategy_cls, timeframe)
+        for display_name, strategy_cls, timeframe in STRATEGY_REGISTRY.values()
     }
 
 
@@ -264,6 +281,9 @@ def handle_single_command(
     if not args.plot:
         matplotlib.use("Agg")
 
+    # Get strategy timeframe
+    timeframe = get_strategy_timeframe(args.strategy)
+
     # Calculate strategy-specific parameters
     strategy_params = {}
     num_months = calculate_months_between(start, end)
@@ -271,7 +291,7 @@ def handle_single_command(
     if args.strategy == "dca":
         monthly_invest = args.cash / num_months
         strategy_params = {"monthly_invest": monthly_invest}
-    # BuyAndHold, TacticalMonthly, TacticalATRMonthly don't need special params
+    # BuyAndHold, TacticalMonthly, TacticalATRMonthly, IntradayVolatilityBands don't need special params
 
     run_backtest(
         symbol=args.symbol,
@@ -282,6 +302,7 @@ def handle_single_command(
         commission=args.commission,
         slippage=args.slippage,
         strategy_params=strategy_params if strategy_params else None,
+        timeframe=timeframe,
     )
 
 
@@ -324,7 +345,7 @@ def handle_compare_multi_command(
 
     Args:
         args: Parsed command-line arguments
-        strategies: Dict mapping strategy display names to strategy classes
+        strategies: Dict mapping strategy display names to strategy classes (legacy)
         start: Start datetime
         end: End datetime
         default_assets: List of default asset symbols to use if --symbols not provided
@@ -347,6 +368,9 @@ def handle_compare_multi_command(
         )
         show_plots = False
 
+    # Get strategies with their timeframes
+    strategies_with_timeframes = get_strategy_map_with_timeframes()
+
     # Run comparison for each symbol
     all_results = []
     for symbol in symbols:
@@ -358,7 +382,7 @@ def handle_compare_multi_command(
             commission=args.commission,
             slippage=args.slippage,
             show_plots=show_plots,
-            strategies=strategies,
+            strategies_with_timeframes=strategies_with_timeframes,
         )
         all_results.append(result)
 

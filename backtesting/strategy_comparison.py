@@ -46,6 +46,7 @@ def run_strategy_comparison(
     slippage: float = 0.0003,
     show_plots: bool = False,
     strategies: dict[str, Type[bt.Strategy]] | None = None,
+    strategies_with_timeframes: dict[str, tuple[Type[bt.Strategy], str]] | None = None,
 ) -> dict:
     """
     Run multi-strategy comparison on a single asset.
@@ -58,39 +59,33 @@ def run_strategy_comparison(
         commission: Commission rate (default 0.02%)
         slippage: Slippage rate (default 0.03%)
         show_plots: Whether to display matplotlib plots (default False)
-        strategies: Dict mapping display names to strategy classes (e.g., {"DCA": DollarCostAveraging})
+        strategies: Dict mapping display names to strategy classes (DEPRECATED - use strategies_with_timeframes)
+        strategies_with_timeframes: Dict mapping display names to (strategy_class, timeframe) tuples
 
     Returns:
         Dict with symbol and strategy results
     """
-    if strategies is None:
+    # Handle backwards compatibility
+    if strategies is not None and strategies_with_timeframes is None:
+        # Legacy mode: assume all strategies use daily data
+        strategies_with_timeframes = {
+            name: (strategy_cls, "daily")
+            for name, strategy_cls in strategies.items()
+        }
+    elif strategies_with_timeframes is None:
         # Fallback to hardcoded 4 strategies for backwards compatibility
-        strategies = {
-            "DCA": DollarCostAveraging,
-            "Buy & Hold": BuyAndHold,
-            "TacticalMonthly": TacticalMonthlyRedistributed,
-            "TacticalATRMonthly": TacticalAtrMonthly,
+        strategies_with_timeframes = {
+            "DCA": (DollarCostAveraging, "daily"),
+            "Buy & Hold": (BuyAndHold, "daily"),
+            "TacticalMonthly": (TacticalMonthlyRedistributed, "daily"),
+            "TacticalATRMonthly": (TacticalAtrMonthly, "daily"),
         }
 
-    strategy_names = " | ".join(strategies.keys())
+    strategy_names = " | ".join(strategies_with_timeframes.keys())
     print("\n" + "=" * 120)
     print(f"STRATEGY COMPARISON: {strategy_names}")
     print(f"Symbol: {symbol} | Period: {start.date()} to {end.date()}")
     print("=" * 120 + "\n")
-
-    # Fetch data once
-    print("Fetching data...")
-    df = fetch_daily_bars(symbol=symbol, start=start, end=end)
-    if df is None or len(df) == 0:
-        print("ERROR: No data available")
-        return {
-            "symbol": symbol,
-            "results": {},
-            "initial_cash": cash,
-        }
-    print(f"Loaded {len(df)} bars\n")
-
-    data_feed = df_to_bt_feed(df)
 
     # Calculate monthly invest amount
     num_months = calculate_months_between(start, end)
@@ -98,19 +93,65 @@ def run_strategy_comparison(
 
     # Run all strategies
     results = {}
-    for strategy_name, strategy_cls in strategies.items():
-        print(f"Running {strategy_name}...")
+    for strategy_name, (strategy_cls, timeframe) in strategies_with_timeframes.items():
+        print(f"Running {strategy_name} ({timeframe} data)...")
+
+        # Fetch data for this strategy's timeframe
+        daily_feed = None
+        if timeframe == "minute":
+            from data.alpaca_data import fetch_minute_bars
+            print(f"Fetching minute data...")
+            minute_df = fetch_minute_bars(symbol=symbol, start=start, end=end)
+
+            if minute_df is None or len(minute_df) == 0:
+                print(f"ERROR: No minute data available for {strategy_name}")
+                results[strategy_name] = {
+                    "final_value": cash,
+                    "sharpe_ratio": 0.0,
+                    "max_drawdown": 0.0,
+                    "final_cash": cash,
+                    "order_count": 0,
+                }
+                continue
+
+            print(f"Loaded {len(minute_df)} minute bars")
+            data_feed = df_to_bt_feed(minute_df)
+
+            # Also fetch daily data for trend filter
+            print(f"Fetching daily data (trend filter)...")
+            daily_df = fetch_daily_bars(symbol=symbol, start=start, end=end)
+            if daily_df is not None and len(daily_df) > 0:
+                daily_feed = df_to_bt_feed(daily_df)
+                print(f"Loaded {len(daily_df)} daily bars for trend filter")
+        else:
+            print(f"Fetching daily data...")
+            df = fetch_daily_bars(symbol=symbol, start=start, end=end)
+
+            if df is None or len(df) == 0:
+                print(f"ERROR: No daily data available for {strategy_name}")
+                results[strategy_name] = {
+                    "final_value": cash,
+                    "sharpe_ratio": 0.0,
+                    "max_drawdown": 0.0,
+                    "final_cash": cash,
+                    "order_count": 0,
+                }
+                continue
+
+            print(f"Loaded {len(df)} daily bars")
+            data_feed = df_to_bt_feed(df)
 
         # Determine strategy-specific parameters
         if strategy_cls == DollarCostAveraging:
             monthly_invest_param = monthly_invest
         else:
-            # BuyAndHold, TacticalMonthly, TacticalATRMonthly don't use monthly_invest
+            # BuyAndHold, TacticalMonthly, TacticalATRMonthly, IntradayVolatilityBands don't use monthly_invest
             monthly_invest_param = None
 
         result = _run_single_strategy(
             strategy_cls=strategy_cls,
             data_feed=data_feed,
+            daily_feed=daily_feed,
             symbol=symbol,
             cash=cash,
             commission=commission,
@@ -138,6 +179,7 @@ def run_strategy_comparison(
 def _run_single_strategy(
     strategy_cls: Type[bt.Strategy],
     data_feed: bt.feeds.PandasData,
+    daily_feed: bt.feeds.PandasData | None,
     symbol: str,
     cash: float,
     commission: float,
@@ -148,7 +190,11 @@ def _run_single_strategy(
 ) -> dict:
     """Run a single strategy and return metrics."""
     cerebro = bt.Cerebro(cheat_on_open=True)
-    cerebro.adddata(data_feed, name=symbol)
+    cerebro.adddata(data_feed, name=symbol)  # Primary feed (datas[0])
+
+    # Add daily feed if provided (for trend filter in minute strategies)
+    if daily_feed is not None:
+        cerebro.adddata(daily_feed, name=f"{symbol}_daily")  # datas[1]
 
     # Add strategy with appropriate parameters
     if strategy_cls == DollarCostAveraging:
