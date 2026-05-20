@@ -49,7 +49,7 @@ class IntradayVolatilityBands(bt.Strategy):
     params = dict(
         # Daily trend filter
         daily_sma_period=200,  # 200-day SMA for bull/bear filter
-        require_daily_uptrend=True,  # Only enter when price > daily SMA
+        require_daily_uptrend=False,  # Allow entries in all market conditions
 
         # Indicator parameters (minute data)
         atr_period=60,  # ATR calculation period (minutes)
@@ -58,9 +58,10 @@ class IntradayVolatilityBands(bt.Strategy):
         stop_multiplier=3.0,  # Stop loss distance in ATR units
 
         # Risk management
-        risk_per_trade=0.02,  # Risk 2% of portfolio value per trade
+        use_stop_loss=False,  # Enable/disable stop loss (DISABLED - trust recovery)
+        risk_per_trade=0.05,  # Risk 5% of portfolio value per trade
         take_profit_pct=0.06,  # Take profit at 6% gain
-        stop_loss_pct=0.04,  # Minimum stop loss at 4% (use max of ATR-based or this)
+        stop_loss_pct=0.04,  # Minimum stop loss at 4% (if enabled)
         min_hold_hours=2.0,  # Minimum hold time in hours (avoid premature exits)
         allow_short=False,  # Whether to take short positions
         allow_fractional=True,  # Allow fractional shares
@@ -165,11 +166,11 @@ class IntradayVolatilityBands(bt.Strategy):
 
         position = self.getposition()
 
-        # If no position, look for entry signals
-        if position.size == 0:
-            self._check_entry_signals()
-        # If we have a position, check for exit signals
-        else:
+        # Always check for entry signals (allow multiple positions since we never exit)
+        self._check_entry_signals()
+
+        # Check exit signals (currently disabled - never exit)
+        if position.size != 0:
             self._check_exit_signals()
 
     def next(self) -> None:
@@ -180,18 +181,26 @@ class IntradayVolatilityBands(bt.Strategy):
             value = float(self.broker.getvalue())
             self.daily_pnl.append(value)
 
-    def _calculate_position_size(self, entry_price: float, stop_price: float) -> float:
+    def _calculate_position_size(self, entry_price: float, stop_price: float | None = None) -> float:
         """
         Calculate position size based on ATR risk management.
 
-        Risk a fixed percentage (e.g., 2%) of total portfolio value per trade.
+        Risk a fixed percentage (e.g., 5%) of total portfolio value per trade.
         Position size = (Portfolio Value × Risk %) / (Entry Price - Stop Price)
+
+        If stop loss is disabled, assume worst case -10% move for position sizing.
         """
         portfolio_value = float(self.broker.getvalue())
         risk_amount = portfolio_value * self.p.risk_per_trade
 
-        # Stop distance in dollars per share
-        stop_distance = abs(entry_price - stop_price)
+        # Calculate stop distance
+        if self.p.use_stop_loss and stop_price is not None:
+            # Use actual stop price
+            stop_distance = abs(entry_price - stop_price)
+        else:
+            # No stop loss: assume worst case -10% move for position sizing
+            assumed_risk_pct = 0.10
+            stop_distance = entry_price * assumed_risk_pct
 
         if stop_distance == 0:
             return 0
@@ -311,92 +320,14 @@ class IntradayVolatilityBands(bt.Strategy):
 
     def _check_exit_signals(self) -> None:
         """
-        Check for exit conditions with take profit and minimum hold time.
+        DISABLED: Never exit - pure buy and hold on each entry.
 
-        Exit Priority:
-        1. Stop loss (immediate, no minimum hold time)
-        2. Take profit (after minimum hold time)
-        3. No trend reversal exit (removed - it was triggering on noise)
-
-        For long positions:
-        - Exit at stop loss: price <= entry - (ATR × stop_multiplier)
-        - Exit at take profit: price >= entry × (1 + take_profit_pct) AND held > min_hold_hours
+        This lets positions ride indefinitely, only limited by:
+        1. Running out of cash for new entries
+        2. Max 1 entry per day (so we accumulate multiple open positions)
         """
-        position = self.getposition()
-        current_price = float(self.minute_data.close[0])
-        current_time = self.minute_data.datetime.datetime(0)
-
-        # Calculate how long we've been in the position
-        hold_duration = current_time - self.entry_time
-        hold_hours = hold_duration.total_seconds() / 3600
-
-        if position.size > 0:  # Long position
-            # Calculate P&L
-            pnl_pct = (current_price - self.entry_price) / self.entry_price
-            pnl_pct_display = pnl_pct * 100
-            pnl_dollars = (current_price - self.entry_price) * self.position_size
-
-            # Priority 1: Stop Loss (no minimum hold time)
-            if self.stop_price and current_price <= self.stop_price:
-                exit_reason = "STOP_LOSS"
-                self.order = self.close()
-
-                print(f"\n{current_time.strftime('%Y-%m-%d %H:%M')}")
-                print(f"LONG EXIT ({exit_reason}) @ ${current_price:.2f}")
-                print(f"  Entry: ${self.entry_price:.2f} | Exit: ${current_price:.2f}")
-                print(f"  P&L: {pnl_pct_display:.2f}% (${pnl_dollars:.2f})")
-                print(f"  Hold Duration: {hold_hours:.2f} hours\n")
-
-                self.trade_count += 1
-                self._record_trade(exit_reason, current_price, current_time, pnl_pct_display, pnl_dollars)
-
-            # Priority 2: Take Profit (only after minimum hold time)
-            elif pnl_pct >= self.p.take_profit_pct and hold_hours >= self.p.min_hold_hours:
-                exit_reason = "TAKE_PROFIT"
-                self.order = self.close()
-
-                print(f"\n{current_time.strftime('%Y-%m-%d %H:%M')}")
-                print(f"LONG EXIT ({exit_reason}) @ ${current_price:.2f}")
-                print(f"  Entry: ${self.entry_price:.2f} | Exit: ${current_price:.2f}")
-                print(f"  P&L: {pnl_pct_display:.2f}% (${pnl_dollars:.2f}) - TARGET: {self.p.take_profit_pct*100:.1f}%")
-                print(f"  Hold Duration: {hold_hours:.2f} hours\n")
-
-                self.trade_count += 1
-                self._record_trade(exit_reason, current_price, current_time, pnl_pct_display, pnl_dollars)
-
-        elif position.size < 0:  # Short position
-            # Calculate P&L
-            pnl_pct = (self.entry_price - current_price) / self.entry_price
-            pnl_pct_display = pnl_pct * 100
-            pnl_dollars = (self.entry_price - current_price) * abs(self.position_size)
-
-            # Priority 1: Stop Loss (no minimum hold time)
-            if self.stop_price and current_price >= self.stop_price:
-                exit_reason = "STOP_LOSS"
-                self.order = self.close()
-
-                print(f"\n{current_time.strftime('%Y-%m-%d %H:%M')}")
-                print(f"SHORT EXIT ({exit_reason}) @ ${current_price:.2f}")
-                print(f"  Entry: ${self.entry_price:.2f} | Exit: ${current_price:.2f}")
-                print(f"  P&L: {pnl_pct_display:.2f}% (${pnl_dollars:.2f})")
-                print(f"  Hold Duration: {hold_hours:.2f} hours\n")
-
-                self.trade_count += 1
-                self._record_trade(exit_reason, current_price, current_time, pnl_pct_display, pnl_dollars)
-
-            # Priority 2: Take Profit (only after minimum hold time)
-            elif pnl_pct >= self.p.take_profit_pct and hold_hours >= self.p.min_hold_hours:
-                exit_reason = "TAKE_PROFIT"
-                self.order = self.close()
-
-                print(f"\n{current_time.strftime('%Y-%m-%d %H:%M')}")
-                print(f"SHORT EXIT ({exit_reason}) @ ${current_price:.2f}")
-                print(f"  Entry: ${self.entry_price:.2f} | Exit: ${current_price:.2f}")
-                print(f"  P&L: {pnl_pct_display:.2f}% (${pnl_dollars:.2f}) - TARGET: {self.p.take_profit_pct*100:.1f}%")
-                print(f"  Hold Duration: {hold_hours:.2f} hours\n")
-
-                self.trade_count += 1
-                self._record_trade(exit_reason, current_price, current_time, pnl_pct_display, pnl_dollars)
+        # NO EXIT LOGIC - positions held forever
+        pass
 
     def _record_trade(self, exit_reason: str, exit_price: float, exit_time, pnl_pct: float, pnl_dollars: float) -> None:
         """Record completed trade for analytics."""
@@ -492,11 +423,57 @@ class IntradayVolatilityBands(bt.Strategy):
         print(f"{'='*70}\n")
 
         # Export trade analytics to CSV
-        if self.p.export_trades and self.completed_trades:
-            self._export_trade_analytics()
+        # Note: With exits disabled, export entry-only data from trades_log
+        if self.p.export_trades and len(self.trades_log) > 0:
+            self._export_entry_analytics()
 
         if self.p.show_plot and len(self.trades_log) > 0:
             self._plot_results()
+
+    def _export_entry_analytics(self) -> None:
+        """Export entry-only analytics to CSV (for no-exit strategies)."""
+        # Get symbol name from data feed
+        symbol = self.minute_data._name if hasattr(self.minute_data, '_name') else 'UNKNOWN'
+
+        # Create output directory
+        output_dir = Path('global_comparison')
+        output_dir.mkdir(exist_ok=True)
+
+        # Generate filename with symbol
+        filename = output_dir / f'entry_analytics_{symbol}.csv'
+
+        # Prepare CSV data - only BUY entries
+        fieldnames = [
+            'symbol',
+            'action',
+            'entry_time',
+            'entry_price',
+            'position_size',
+            'value',
+            'commission',
+        ]
+
+        # Write to CSV
+        with open(filename, 'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for trade in self.trades_log:
+                if trade['action'] == 'BUY':  # Only export entries
+                    row = {
+                        'symbol': symbol,
+                        'action': trade['action'],
+                        'entry_time': trade['datetime'].strftime('%Y-%m-%d %H:%M:%S'),
+                        'entry_price': f"{trade['price']:.2f}",
+                        'position_size': f"{trade['size']:.2f}",
+                        'value': f"{trade['value']:.2f}",
+                        'commission': f"{trade['comm']:.2f}",
+                    }
+                    writer.writerow(row)
+
+        buy_count = sum(1 for t in self.trades_log if t['action'] == 'BUY')
+        print(f"Entry analytics exported to: {filename}")
+        print(f"Total entries exported: {buy_count}\n")
 
     def _export_trade_analytics(self) -> None:
         """Export detailed trade analytics to CSV."""

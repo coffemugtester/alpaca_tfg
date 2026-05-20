@@ -6,7 +6,13 @@ backtesting workflow.
 """
 
 import argparse
+import os
+import shutil
+import time
+import traceback
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from argparse import Namespace
+from datetime import datetime
 
 import matplotlib
 
@@ -230,6 +236,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=SLIPPAGE_DEFAULT,
         help="Slippage percentage (default: 0.03%%)",
     )
+    compare_multi_parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Run backtests in parallel (faster for multiple symbols)",
+    )
+    compare_multi_parser.add_argument(
+        "--strategies",
+        type=str,
+        nargs="+",
+        default=None,
+        help=f"List of strategy keys to run (default: all). Available: {', '.join(STRATEGY_REGISTRY.keys())}",
+    )
 
     # ============================================================
     # Subcommand: analyze-volatility
@@ -333,6 +351,110 @@ def handle_compare_single_command(
     pipeline.run_comparison()
 
 
+def _run_single_symbol_backtest(
+    symbol: str,
+    start,
+    end,
+    cash: float,
+    commission: float,
+    slippage: float,
+    strategies_with_timeframes: dict,
+):
+    """
+    Worker function to run strategies for a single symbol (module-level for pickling).
+
+    Args:
+        symbol: Ticker symbol
+        start: Start datetime
+        end: End datetime
+        cash: Initial cash
+        commission: Commission rate
+        slippage: Slippage rate
+        strategies_with_timeframes: Strategy registry
+
+    Returns:
+        Result dict or None on failure
+    """
+    symbol_start = time.time()
+    try:
+        print(f"\n[PARALLEL] Starting {symbol} at {datetime.now().strftime('%H:%M:%S')}")
+
+        result = run_strategy_comparison(
+            symbol=symbol,
+            start=start,
+            end=end,
+            cash=cash,
+            commission=commission,
+            slippage=slippage,
+            show_plots=False,  # Force off in parallel mode
+            strategies_with_timeframes=strategies_with_timeframes,
+        )
+
+        duration = time.time() - symbol_start
+        print(f"\n[PARALLEL] ✓ Completed {symbol} in {duration:.1f}s")
+        return result
+
+    except Exception as e:
+        duration = time.time() - symbol_start
+        print(f"\n[PARALLEL] ✗ FAILED {symbol} after {duration:.1f}s")
+        print(f"  Error: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        return None
+
+
+def prefetch_data_for_symbols(symbols: list[str], start, end) -> None:
+    """
+    Pre-fetch all data for symbols to populate cache and avoid concurrent writes.
+
+    Args:
+        symbols: List of ticker symbols
+        start: Start datetime
+        end: End datetime
+    """
+    from data.alpaca_data import fetch_daily_bars, fetch_minute_bars
+
+    print(f"\n{'='*70}")
+    print(f"PRE-FETCHING DATA FOR {len(symbols)} SYMBOLS")
+    print(f"{'='*70}")
+    print(f"Start: {start}")
+    print(f"End: {end}")
+    print(f"Symbols: {', '.join(symbols)}\n")
+
+    overall_start = time.time()
+
+    for i, symbol in enumerate(symbols, 1):
+        symbol_start = time.time()
+        print(f"[{i}/{len(symbols)}] Pre-fetching {symbol}...")
+
+        # Fetch daily data
+        try:
+            daily_start = time.time()
+            fetch_daily_bars(symbol, start, end)
+            daily_duration = time.time() - daily_start
+            print(f"  ✓ Daily data fetched ({daily_duration:.1f}s)")
+        except Exception as e:
+            print(f"  ✗ Daily data FAILED: {type(e).__name__}: {e}")
+            traceback.print_exc()
+
+        # Fetch minute data
+        try:
+            minute_start = time.time()
+            fetch_minute_bars(symbol, start, end)
+            minute_duration = time.time() - minute_start
+            print(f"  ✓ Minute data fetched ({minute_duration:.1f}s)")
+        except Exception as e:
+            print(f"  ✗ Minute data FAILED: {type(e).__name__}: {e}")
+            traceback.print_exc()
+
+        symbol_duration = time.time() - symbol_start
+        print(f"  Total: {symbol_duration:.1f}s\n")
+
+    overall_duration = time.time() - overall_start
+    print(f"{'='*70}")
+    print(f"PRE-FETCH COMPLETE: {overall_duration:.1f}s total")
+    print(f"{'='*70}\n")
+
+
 def handle_compare_multi_command(
     args: Namespace,
     strategies: dict,
@@ -350,6 +472,13 @@ def handle_compare_multi_command(
         end: End datetime
         default_assets: List of default asset symbols to use if --symbols not provided
     """
+    # Clean up global_comparison directory before starting
+    comparison_dir = "global_comparison"
+    if os.path.exists(comparison_dir):
+        print(f"Clearing {comparison_dir} directory...")
+        shutil.rmtree(comparison_dir)
+    os.makedirs(comparison_dir, exist_ok=True)
+
     # Determine which symbols to run
     if args.symbols is None:
         symbols = default_assets
@@ -369,22 +498,113 @@ def handle_compare_multi_command(
         show_plots = False
 
     # Get strategies with their timeframes
-    strategies_with_timeframes = get_strategy_map_with_timeframes()
+    all_strategies = get_strategy_map_with_timeframes()
 
-    # Run comparison for each symbol
-    all_results = []
-    for symbol in symbols:
-        result = run_strategy_comparison(
-            symbol=symbol,
-            start=start,
-            end=end,
-            cash=args.cash,
-            commission=args.commission,
-            slippage=args.slippage,
-            show_plots=show_plots,
-            strategies_with_timeframes=strategies_with_timeframes,
-        )
-        all_results.append(result)
+    # Filter strategies if --strategies flag provided
+    if args.strategies is not None:
+        # Validate strategy keys
+        invalid_keys = [k for k in args.strategies if k not in all_strategies]
+        if invalid_keys:
+            print(f"ERROR: Invalid strategy keys: {', '.join(invalid_keys)}")
+            print(f"Available strategies: {', '.join(all_strategies.keys())}")
+            return
+
+        # Filter to only requested strategies
+        strategies_with_timeframes = {
+            k: v for k, v in all_strategies.items() if k in args.strategies
+        }
+        print(f"\nRunning {len(strategies_with_timeframes)} strategies: {', '.join(strategies_with_timeframes.keys())}\n")
+    else:
+        strategies_with_timeframes = all_strategies
+
+    # Determine execution mode
+    use_parallel = args.parallel and len(symbols) > 1
+
+    if use_parallel:
+        print(f"\n🚀 PARALLEL MODE: Using up to {os.cpu_count()} workers\n")
+
+        # Pre-fetch all data to avoid cache conflicts
+        prefetch_data_for_symbols(symbols, start, end)
+
+        # Execute in parallel
+        all_results = []
+        max_workers = min(len(symbols), os.cpu_count() or 4)
+        overall_start = time.time()
+
+        print(f"\n{'='*70}")
+        print(f"STARTING PARALLEL EXECUTION WITH {max_workers} WORKERS")
+        print(f"{'='*70}\n")
+
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all jobs using module-level function
+            future_to_symbol = {
+                executor.submit(
+                    _run_single_symbol_backtest,
+                    symbol,
+                    start,
+                    end,
+                    args.cash,
+                    args.commission,
+                    args.slippage,
+                    strategies_with_timeframes,
+                ): symbol
+                for symbol in symbols
+            }
+
+            # Collect results as they complete
+            completed = 0
+            for future in as_completed(future_to_symbol):
+                symbol = future_to_symbol[future]
+                completed += 1
+
+                try:
+                    result = future.result()
+                    if result is not None:
+                        all_results.append(result)
+                    print(f"\n[PROGRESS] {completed}/{len(symbols)} symbols completed")
+                except Exception as e:
+                    print(f"\n[ERROR] Failed to retrieve result for {symbol}: {e}")
+                    traceback.print_exc()
+
+        overall_duration = time.time() - overall_start
+        print(f"\n{'='*70}")
+        print(f"PARALLEL EXECUTION COMPLETE")
+        print(f"Total time: {overall_duration:.1f}s")
+        print(f"Average: {overall_duration/len(symbols):.1f}s per symbol")
+        print(f"Speedup: ~{(len(symbols)*60)/overall_duration:.1f}x vs sequential (estimated)")
+        print(f"{'='*70}\n")
+
+    else:
+        # Sequential execution (original code)
+        if not use_parallel and len(symbols) > 1:
+            print(f"\n📝 SEQUENTIAL MODE (use --parallel for faster execution)\n")
+
+        all_results = []
+        for i, symbol in enumerate(symbols, 1):
+            print(f"\n[{i}/{len(symbols)}] Processing {symbol}...")
+            symbol_start = time.time()
+
+            try:
+                result = run_strategy_comparison(
+                    symbol=symbol,
+                    start=start,
+                    end=end,
+                    cash=args.cash,
+                    commission=args.commission,
+                    slippage=args.slippage,
+                    show_plots=show_plots,
+                    strategies_with_timeframes=strategies_with_timeframes,
+                )
+                all_results.append(result)
+
+                duration = time.time() - symbol_start
+                print(f"✓ Completed {symbol} in {duration:.1f}s")
+
+            except Exception as e:
+                duration = time.time() - symbol_start
+                print(f"✗ FAILED {symbol} after {duration:.1f}s")
+                print(f"  Error: {type(e).__name__}: {e}")
+                traceback.print_exc()
 
     # Print summary table if multiple assets
     if len(symbols) > 1:
