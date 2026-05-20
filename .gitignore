@@ -8,3 +8,6 @@ __pycache__/
 comparison_*
 global_comparison/
 notes.md
+
+# Database cache
+data/alpaca_cache.db

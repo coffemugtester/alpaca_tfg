@@ -59,7 +59,7 @@ class IntradayVolatilityBands(bt.Strategy):
 
         # Risk management
         use_stop_loss=False,  # Enable/disable stop loss (DISABLED - trust recovery)
-        risk_per_trade=0.05,  # Risk 5% of portfolio value per trade
+        risk_per_trade=0.15,  # Risk 15% of portfolio value per trade (increased for better capital utilization)
         take_profit_pct=0.06,  # Take profit at 6% gain
         stop_loss_pct=0.04,  # Minimum stop loss at 4% (if enabled)
         min_hold_hours=2.0,  # Minimum hold time in hours (avoid premature exits)
@@ -156,7 +156,7 @@ class IntradayVolatilityBands(bt.Strategy):
         return self.daily_entry_count < self.p.max_daily_entries
 
     def next_open(self) -> None:
-        """Check for entries at bar open (after indicators are ready)."""
+        """Check for entries and exits at bar open (after indicators are ready)."""
         # Reset daily counters if new trading day
         self._reset_daily_counters_if_needed()
 
@@ -166,10 +166,11 @@ class IntradayVolatilityBands(bt.Strategy):
 
         position = self.getposition()
 
-        # Always check for entry signals (allow multiple positions since we never exit)
-        self._check_entry_signals()
+        # Check for entry signals if we don't have a position
+        if position.size == 0:
+            self._check_entry_signals()
 
-        # Check exit signals (currently disabled - never exit)
+        # Check exit signals if we have a position
         if position.size != 0:
             self._check_exit_signals()
 
@@ -198,8 +199,8 @@ class IntradayVolatilityBands(bt.Strategy):
             # Use actual stop price
             stop_distance = abs(entry_price - stop_price)
         else:
-            # No stop loss: assume worst case -10% move for position sizing
-            assumed_risk_pct = 0.10
+            # No stop loss: assume worst case -6% move for position sizing (matching take profit)
+            assumed_risk_pct = 0.06
             stop_distance = entry_price * assumed_risk_pct
 
         if stop_distance == 0:
@@ -320,19 +321,82 @@ class IntradayVolatilityBands(bt.Strategy):
 
     def _check_exit_signals(self) -> None:
         """
-        DISABLED: Never exit - pure buy and hold on each entry.
+        Check for exit conditions: take profit or stop loss (if enabled).
 
-        This lets positions ride indefinitely, only limited by:
-        1. Running out of cash for new entries
-        2. Max 1 entry per day (so we accumulate multiple open positions)
+        Exit conditions:
+        - Take profit: +6% gain from entry price
+        - Stop loss: ATR-based or fixed 4% loss (if use_stop_loss=True)
+        - Minimum hold time: 2 hours to avoid noise
         """
-        # NO EXIT LOGIC - positions held forever
-        pass
+        if self.entry_price is None or self.entry_time is None:
+            return
+
+        position = self.getposition()
+        if position.size == 0:
+            return
+
+        current_price = float(self.minute_data.close[0])
+        current_time = self.minute_data.datetime.datetime(0)
+
+        # Check minimum hold time (avoid premature exits)
+        hold_duration_hours = (current_time - self.entry_time).total_seconds() / 3600
+        if hold_duration_hours < self.p.min_hold_hours:
+            return
+
+        # Calculate P&L
+        if position.size > 0:  # Long position
+            pnl_pct = (current_price - self.entry_price) / self.entry_price
+            pnl_dollars = (current_price - self.entry_price) * position.size
+
+            # Take profit: +6% gain
+            if pnl_pct >= self.p.take_profit_pct:
+                self.order = self.close()
+                print(f"\n{current_time.strftime('%Y-%m-%d %H:%M')}")
+                print(f"TAKE PROFIT EXIT @ ${current_price:.2f}")
+                print(f"  Entry: ${self.entry_price:.2f} | Gain: {pnl_pct*100:.2f}% (${pnl_dollars:.2f})")
+                print(f"  Hold Time: {hold_duration_hours:.1f} hours\n")
+                self._record_trade('TAKE_PROFIT', current_price, current_time, pnl_pct, pnl_dollars)
+                return
+
+            # Stop loss: only if enabled
+            if self.p.use_stop_loss and self.stop_price is not None:
+                if current_price <= self.stop_price:
+                    self.order = self.close()
+                    print(f"\n{current_time.strftime('%Y-%m-%d %H:%M')}")
+                    print(f"STOP LOSS EXIT @ ${current_price:.2f}")
+                    print(f"  Entry: ${self.entry_price:.2f} | Loss: {pnl_pct*100:.2f}% (${pnl_dollars:.2f})")
+                    print(f"  Stop Price: ${self.stop_price:.2f} | Hold Time: {hold_duration_hours:.1f} hours\n")
+                    self._record_trade('STOP_LOSS', current_price, current_time, pnl_pct, pnl_dollars)
+                    return
+
+        elif position.size < 0:  # Short position
+            pnl_pct = (self.entry_price - current_price) / self.entry_price
+            pnl_dollars = (self.entry_price - current_price) * abs(position.size)
+
+            # Take profit: +6% gain
+            if pnl_pct >= self.p.take_profit_pct:
+                self.order = self.close()
+                print(f"\n{current_time.strftime('%Y-%m-%d %H:%M')}")
+                print(f"TAKE PROFIT EXIT (SHORT) @ ${current_price:.2f}")
+                print(f"  Entry: ${self.entry_price:.2f} | Gain: {pnl_pct*100:.2f}% (${pnl_dollars:.2f})")
+                print(f"  Hold Time: {hold_duration_hours:.1f} hours\n")
+                self._record_trade('TAKE_PROFIT', current_price, current_time, pnl_pct, pnl_dollars)
+                return
+
+            # Stop loss: only if enabled
+            if self.p.use_stop_loss and self.stop_price is not None:
+                if current_price >= self.stop_price:
+                    self.order = self.close()
+                    print(f"\n{current_time.strftime('%Y-%m-%d %H:%M')}")
+                    print(f"STOP LOSS EXIT (SHORT) @ ${current_price:.2f}")
+                    print(f"  Entry: ${self.entry_price:.2f} | Loss: {pnl_pct*100:.2f}% (${pnl_dollars:.2f})")
+                    print(f"  Stop Price: ${self.stop_price:.2f} | Hold Time: {hold_duration_hours:.1f} hours\n")
+                    self._record_trade('STOP_LOSS', current_price, current_time, pnl_pct, pnl_dollars)
+                    return
 
     def _record_trade(self, exit_reason: str, exit_price: float, exit_time, pnl_pct: float, pnl_dollars: float) -> None:
-        """Record completed trade for analytics."""
-        position = self.getposition()
-        direction = "LONG" if position.size > 0 else "SHORT"
+        """Record completed trade for analytics and reset entry tracking."""
+        direction = "LONG" if self.position_size > 0 else "SHORT"
 
         trade_record = {
             'direction': direction,
@@ -349,6 +413,12 @@ class IntradayVolatilityBands(bt.Strategy):
         }
 
         self.completed_trades.append(trade_record)
+
+        # Reset entry tracking so we can take new positions
+        self.entry_price = None
+        self.entry_time = None
+        self.stop_price = None
+        self.position_size = 0
 
     def notify_order(self, order: bt.Order) -> None:
         """Handle order notifications."""
@@ -422,12 +492,15 @@ class IntradayVolatilityBands(bt.Strategy):
         print(f"  Overnight Positions: ALLOWED")
         print(f"{'='*70}\n")
 
-        # Export trade analytics to CSV
-        # Note: With exits disabled, export entry-only data from trades_log
-        if self.p.export_trades and len(self.trades_log) > 0:
+        # Export trade analytics to CSV only if we have completed trades
+        if self.p.export_trades and len(self.completed_trades) > 0:
+            self._export_trade_analytics()
+        elif self.p.export_trades and len(self.trades_log) > 0:
+            # Fallback: if no completed trades but have entries, export entry-only data
+            print("Note: No completed trades to export. Exporting entry-only data.")
             self._export_entry_analytics()
 
-        if self.p.show_plot and len(self.trades_log) > 0:
+        if self.p.show_plot and len(self.completed_trades) > 0:
             self._plot_results()
 
     def _export_entry_analytics(self) -> None:

@@ -7,6 +7,7 @@ from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
 from config import get_alpaca_client
+from data.alpaca_cache import AlpacaCache
 
 
 def fetch_daily_bars(
@@ -17,7 +18,25 @@ def fetch_daily_bars(
 ) -> pd.DataFrame:
     """
     Fetch daily bars for a single symbol from Alpaca and return a clean DataFrame.
+
+    Uses cache-first strategy: queries cache before making API calls.
+    If complete data is cached, returns immediately without API call.
+    Otherwise, fetches from API and stores in cache for future runs.
     """
+    # Check cache first
+    cache = AlpacaCache()
+
+    try:
+        cached_df = cache.query_daily_bars(symbol, start, end)
+
+        if cached_df is not None:
+            print(f"Cache HIT: {symbol} daily {start.date()} to {end.date()} ({len(cached_df)} rows from cache)")
+            return cached_df
+    except Exception as e:
+        print(f"Cache error (will fetch from API): {e}")
+
+    # Cache miss - fetch from API
+    print(f"Cache MISS: Fetching {symbol} daily from API...")
 
     client = get_alpaca_client()
 
@@ -36,6 +55,13 @@ def fetch_daily_bars(
     if df.index.nlevels == 2:
         df = df.xs(symbol)
 
+    # Store in cache for future use
+    try:
+        cache.insert_daily_bars(symbol, df)
+        print(f"Stored {len(df)} daily bars in cache for {symbol}")
+    except Exception as e:
+        print(f"Warning: Failed to cache data: {e}")
+
     return df
 
 
@@ -47,6 +73,10 @@ def fetch_minute_bars(
 ) -> pd.DataFrame:
     """
     Fetch minute bars for a single symbol from Alpaca and return a clean DataFrame.
+
+    Uses cache-first strategy: queries cache before making API calls.
+    If complete data is cached, returns immediately without API call.
+    Otherwise, fetches from API in 1-month chunks and stores in cache.
 
     Handles pagination for large date ranges (Alpaca limits to 10,000 bars per request).
     For 10-year periods, this may require multiple requests.
@@ -64,6 +94,21 @@ def fetch_minute_bars(
         Alpaca's historical minute data availability may be limited (typically 1-5 years).
         If data is unavailable for the full period, returns whatever is available.
     """
+    # Check cache first
+    cache = AlpacaCache()
+
+    try:
+        cached_df = cache.query_minute_bars(symbol, start, end)
+
+        if cached_df is not None:
+            print(f"Cache HIT: {symbol} minute {start.date()} to {end.date()} ({len(cached_df)} rows from cache)")
+            return cached_df
+    except Exception as e:
+        print(f"Cache error (will fetch from API): {e}")
+
+    # Cache miss - fetch from API
+    print(f"Cache MISS: Fetching {symbol} minute from API...")
+
     client = get_alpaca_client()
 
     # Strategy: Fetch data in chunks to handle pagination
@@ -118,4 +163,11 @@ def fetch_minute_bars(
     df = df[~df.index.duplicated(keep='first')]
 
     print(f"Total: {len(df)} minute bars for {symbol}")
+
+    # Store in cache for future use
+    try:
+        cache.insert_minute_bars(symbol, df)
+    except Exception as e:
+        print(f"Warning: Failed to cache data: {e}")
+
     return df
