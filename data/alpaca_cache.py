@@ -126,6 +126,35 @@ class AlpacaCache:
         if df.empty:
             return None
 
+        # Check if cached data covers the full requested date range
+        # Allow 5 days tolerance for weekends/recent trading days
+        cached_start = df.index.min()
+        cached_end = df.index.max()
+
+        # Normalize all to timezone-naive for comparison
+        if hasattr(cached_start, 'tz') and cached_start.tz is not None:
+            cached_start = cached_start.tz_localize(None)
+        if hasattr(cached_end, 'tz') and cached_end.tz is not None:
+            cached_end = cached_end.tz_localize(None)
+
+        # Convert start/end to pd.Timestamp and ensure timezone-naive
+        start_ts = pd.Timestamp(start)
+        end_ts = pd.Timestamp(end)
+        if start_ts.tz is not None:
+            start_ts = start_ts.tz_localize(None)
+        if end_ts.tz is not None:
+            end_ts = end_ts.tz_localize(None)
+
+        tolerance_days = pd.Timedelta(days=5)
+
+        if cached_start > start_ts + tolerance_days:
+            # Cache doesn't go back far enough
+            return None
+
+        if cached_end < end_ts - tolerance_days:
+            # Cache doesn't go forward far enough
+            return None
+
         # Check if we have complete data
         # Allow some tolerance for weekends/holidays
         # Expect ~252 trading days per year
@@ -185,6 +214,35 @@ class AlpacaCache:
         if df.empty:
             return None
 
+        # Check if cached data covers the full requested date range
+        # Allow 5 days tolerance for weekends/recent trading days
+        cached_start = df.index.min()
+        cached_end = df.index.max()
+
+        # Normalize all to timezone-naive for comparison
+        if hasattr(cached_start, 'tz') and cached_start.tz is not None:
+            cached_start = cached_start.tz_localize(None)
+        if hasattr(cached_end, 'tz') and cached_end.tz is not None:
+            cached_end = cached_end.tz_localize(None)
+
+        # Convert start/end to pd.Timestamp and ensure timezone-naive
+        start_ts = pd.Timestamp(start)
+        end_ts = pd.Timestamp(end)
+        if start_ts.tz is not None:
+            start_ts = start_ts.tz_localize(None)
+        if end_ts.tz is not None:
+            end_ts = end_ts.tz_localize(None)
+
+        tolerance_days = pd.Timedelta(days=5)
+
+        if cached_start > start_ts + tolerance_days:
+            # Cache doesn't go back far enough
+            return None
+
+        if cached_end < end_ts - tolerance_days:
+            # Cache doesn't go forward far enough
+            return None
+
         # Check if we have reasonable data coverage
         # Market hours: 6.5 hours/day * 60 min = 390 bars/day
         # Rough estimate of expected bars
@@ -215,10 +273,25 @@ class AlpacaCache:
         df_copy = df.copy()
         df_copy['symbol'] = symbol
         # Convert to timezone-naive UTC before storing to ensure uniqueness
-        df_copy['date'] = pd.to_datetime(df_copy.index).tz_convert('UTC').tz_localize(None).date
+        # Handle both timezone-aware and timezone-naive inputs
+        idx = pd.to_datetime(df_copy.index)
+        if idx.tz is not None:
+            # Timezone-aware: convert to UTC then strip timezone
+            df_copy['date'] = idx.tz_convert('UTC').tz_localize(None)
+        else:
+            # Already timezone-naive: use as-is
+            df_copy['date'] = idx
 
         # Select columns in correct order
         insert_df = df_copy[['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']]
+
+        # Convert Timestamp column to Python date objects for SQLite compatibility
+        # Must convert to list to prevent pandas from re-converting to Timestamp
+        insert_df = insert_df.copy()
+        insert_df['date'] = [
+            x.date() if hasattr(x, 'date') else x
+            for x in insert_df['date']
+        ]
 
         # Insert in batches to avoid SQLite's 999 variable limit
         # With 7 columns, max rows per batch = 999/7 = ~142
@@ -231,11 +304,21 @@ class AlpacaCache:
 
             # Use INSERT OR REPLACE for each row
             for _, row in batch.iterrows():
+                # Convert date to Python date at insertion time
+                row_values = (
+                    row['symbol'],
+                    row['date'].date() if hasattr(row['date'], 'date') else row['date'],
+                    row['open'],
+                    row['high'],
+                    row['low'],
+                    row['close'],
+                    row['volume']
+                )
                 cursor.execute("""
                     INSERT OR REPLACE INTO daily_bars
                     (symbol, date, open, high, low, close, volume)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, tuple(row))
+                """, row_values)
 
         conn.commit()
         conn.close()
@@ -257,11 +340,25 @@ class AlpacaCache:
         df_copy = df.copy()
         df_copy['symbol'] = symbol
         # Convert to timezone-naive UTC before storing to ensure uniqueness
-        # All timestamps normalized to UTC without timezone suffix
-        df_copy['timestamp'] = pd.to_datetime(df_copy.index).tz_convert('UTC').tz_localize(None)
+        # Handle both timezone-aware and timezone-naive inputs
+        idx = pd.to_datetime(df_copy.index)
+        if idx.tz is not None:
+            # Timezone-aware: convert to UTC then strip timezone
+            df_copy['timestamp'] = idx.tz_convert('UTC').tz_localize(None)
+        else:
+            # Already timezone-naive: use as-is
+            df_copy['timestamp'] = idx
 
         # Select columns in correct order
         insert_df = df_copy[['symbol', 'timestamp', 'open', 'high', 'low', 'close', 'volume']]
+
+        # Convert Timestamp column to Python datetime objects for SQLite compatibility
+        # Must convert to list to prevent pandas from re-converting to Timestamp
+        insert_df = insert_df.copy()
+        insert_df['timestamp'] = [
+            x.to_pydatetime() if hasattr(x, 'to_pydatetime') else x
+            for x in insert_df['timestamp']
+        ]
 
         # Insert in batches to avoid SQLite's 999 variable limit
         # With 7 columns, max rows per batch = 999/7 = ~142
@@ -277,11 +374,21 @@ class AlpacaCache:
 
             # Use INSERT OR REPLACE for each row
             for _, row in batch.iterrows():
+                # Convert timestamp to Python datetime at insertion time
+                row_values = (
+                    row['symbol'],
+                    row['timestamp'].to_pydatetime() if hasattr(row['timestamp'], 'to_pydatetime') else row['timestamp'],
+                    row['open'],
+                    row['high'],
+                    row['low'],
+                    row['close'],
+                    row['volume']
+                )
                 cursor.execute("""
                     INSERT OR REPLACE INTO minute_bars
                     (symbol, timestamp, open, high, low, close, volume)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, tuple(row))
+                """, row_values)
 
             # Progress indicator for large datasets
             if (i + batch_size) % 50000 == 0 or i + batch_size >= total_rows:
