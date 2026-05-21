@@ -20,6 +20,54 @@ from strategies.tacticalmonthly import TacticalMonthlyRedistributed
 from strategies.tacticalatrmonthly import TacticalAtrMonthly
 
 
+# Asset classification with hierarchical type/category structure
+ASSET_CLASSIFICATIONS = {
+    # ETFs
+    "SPY": ("ETF", "Broad Market"),
+    "QQQ": ("ETF", "Tech"),
+    "IWM": ("ETF", "Small Cap"),
+    "XLE": ("ETF", "Energy"),
+    "GLD": ("ETF", "Gold"),
+    "TLT": ("ETF", "Treasury Bond"),
+
+    # Individual Stocks - Tech
+    "AAPL": ("Stock", "Tech"),
+    "AMD": ("Stock", "Tech"),
+
+    # Individual Stocks - Travel & Leisure
+    "BKNG": ("Stock", "Travel"),
+    "EXPE": ("Stock", "Travel"),
+    "RCL": ("Stock", "Cruise"),
+    "CCL": ("Stock", "Cruise"),
+    "NCLH": ("Stock", "Cruise"),
+    "TRIP": ("Stock", "Travel"),
+    "MMYT": ("Stock", "Travel"),
+    "TNL": ("Stock", "Travel"),
+
+    # Individual Stocks - Other
+    "LIND": ("Stock", "Industrial"),
+}
+
+
+def get_asset_classification(symbol: str) -> tuple[str, str]:
+    """
+    Get the type and category for a given asset symbol.
+
+    Args:
+        symbol: Asset ticker symbol
+
+    Returns:
+        Tuple of (type, category). Defaults to ("Other", "Unknown") if not found.
+
+    Example:
+        >>> get_asset_classification("SPY")
+        ("ETF", "Broad Market")
+        >>> get_asset_classification("AAPL")
+        ("Stock", "Tech")
+    """
+    return ASSET_CLASSIFICATIONS.get(symbol, ("Other", "Unknown"))
+
+
 class OrderCountAnalyzer(bt.Analyzer):
     """Track all order attempts (submitted, completed, rejected)."""
 
@@ -166,7 +214,7 @@ def run_strategy_comparison(
     _print_comparison(results, cash)
 
     # Export to CSV
-    _export_to_csv(symbol, results, cash)
+    _export_to_csv(symbol, results, cash, start, end)
 
     # Return results for summary table
     return {
@@ -319,10 +367,60 @@ def _print_comparison(results: dict, initial_cash: float) -> None:
     print("\n")
 
 
+def _calculate_cagr(initial_value: float, final_value: float, start: datetime, end: datetime) -> float:
+    """
+    Calculate Compound Annual Growth Rate (CAGR).
+
+    Formula: ((final_value / initial_value) ^ (1 / years)) - 1
+
+    Args:
+        initial_value: Starting portfolio value
+        final_value: Ending portfolio value
+        start: Start date
+        end: End date
+
+    Returns:
+        CAGR as a decimal (e.g., 0.15 for 15%)
+    """
+    if initial_value <= 0 or final_value <= 0:
+        return 0.0
+
+    # Calculate years (including fractional years)
+    days = (end - start).days
+    years = days / 365.25  # Account for leap years
+
+    if years <= 0:
+        return 0.0
+
+    cagr = (final_value / initial_value) ** (1 / years) - 1
+    return cagr
+
+
+def _calculate_calmar(cagr: float, max_drawdown: float) -> float:
+    """
+    Calculate Calmar Ratio.
+
+    Formula: CAGR / abs(Max Drawdown)
+
+    Args:
+        cagr: Compound annual growth rate as decimal
+        max_drawdown: Maximum drawdown as decimal (positive value)
+
+    Returns:
+        Calmar ratio (higher is better)
+    """
+    if max_drawdown == 0:
+        return 0.0
+
+    return cagr / abs(max_drawdown)
+
+
 def _export_to_csv(
     symbol: str,
     results: dict,
     initial_cash: float,
+    start: datetime,
+    end: datetime,
 ) -> None:
     """Export comparison results to CSV in append mode with delta columns vs baselines.
 
@@ -330,6 +428,8 @@ def _export_to_csv(
         symbol: Asset symbol
         results: Dict mapping strategy names to result dicts
         initial_cash: Initial cash amount
+        start: Start date for CAGR calculation
+        end: End date for CAGR calculation
     """
     # Create directory if it doesn't exist
     csv_dir = Path.cwd() / "global_comparison"
@@ -358,12 +458,17 @@ def _export_to_csv(
             sharpe = (
                 result["sharpe_ratio"] if result["sharpe_ratio"] is not None else 0.0
             )
+            cagr = _calculate_cagr(initial_cash, result["final_value"], start, end)
+
+            calmar = _calculate_calmar(cagr, result["max_drawdown"] if result["max_drawdown"] else 0.0)
 
             baseline_metrics[baseline_name] = {
                 "final_value": result["final_value"],
                 "total_return_pct": total_return_pct,
+                "cagr": cagr,
                 "sharpe_ratio": sharpe,
                 "max_drawdown_pct": max_dd_pct,
+                "calmar_ratio": calmar,
                 "unused_cash": result["final_cash"],
                 "order_count": result["order_count"],
             }
@@ -380,6 +485,8 @@ def _export_to_csv(
             result["max_drawdown"] * 100 if result["max_drawdown"] is not None else 0.0
         )
         sharpe = result["sharpe_ratio"] if result["sharpe_ratio"] is not None else 0.0
+        cagr = _calculate_cagr(initial_cash, result["final_value"], start, end)
+        calmar = _calculate_calmar(cagr, result["max_drawdown"] if result["max_drawdown"] else 0.0)
 
         # Calculate deltas vs Buy & Hold
         if "Buy & Hold" in baseline_metrics:
@@ -394,6 +501,9 @@ def _export_to_csv(
                 if strategy_name != "Buy & Hold"
                 else 0.0
             )
+            cagr_vs_bnh = (
+                cagr - bnh["cagr"] if strategy_name != "Buy & Hold" else 0.0
+            )
             sharpe_vs_bnh = (
                 sharpe - bnh["sharpe_ratio"] if strategy_name != "Buy & Hold" else 0.0
             )
@@ -401,6 +511,9 @@ def _export_to_csv(
                 max_dd_pct - bnh["max_drawdown_pct"]
                 if strategy_name != "Buy & Hold"
                 else 0.0
+            )
+            calmar_vs_bnh = (
+                calmar - bnh["calmar_ratio"] if strategy_name != "Buy & Hold" else 0.0
             )
             unused_cash_vs_bnh = (
                 result["final_cash"] - bnh["unused_cash"]
@@ -415,8 +528,10 @@ def _export_to_csv(
         else:
             final_value_vs_bnh = 0.0
             total_return_vs_bnh = 0.0
+            cagr_vs_bnh = 0.0
             sharpe_vs_bnh = 0.0
             max_dd_vs_bnh = 0.0
+            calmar_vs_bnh = 0.0
             unused_cash_vs_bnh = 0.0
             order_count_vs_bnh = 0
 
@@ -433,11 +548,17 @@ def _export_to_csv(
                 if strategy_name != "DCA"
                 else 0.0
             )
+            cagr_vs_dca = (
+                cagr - dca["cagr"] if strategy_name != "DCA" else 0.0
+            )
             sharpe_vs_dca = (
                 sharpe - dca["sharpe_ratio"] if strategy_name != "DCA" else 0.0
             )
             max_dd_vs_dca = (
                 max_dd_pct - dca["max_drawdown_pct"] if strategy_name != "DCA" else 0.0
+            )
+            calmar_vs_dca = (
+                calmar - dca["calmar_ratio"] if strategy_name != "DCA" else 0.0
             )
             unused_cash_vs_dca = (
                 result["final_cash"] - dca["unused_cash"]
@@ -452,14 +573,19 @@ def _export_to_csv(
         else:
             final_value_vs_dca = 0.0
             total_return_vs_dca = 0.0
+            cagr_vs_dca = 0.0
             sharpe_vs_dca = 0.0
             max_dd_vs_dca = 0.0
+            calmar_vs_dca = 0.0
             unused_cash_vs_dca = 0.0
             order_count_vs_dca = 0
 
+        asset_type, asset_category = get_asset_classification(symbol)
         rows.append(
             {
                 "asset": symbol,
+                "type": asset_type,
+                "category": asset_category,
                 "strategy": strategy_name,
                 "final_value": f"{result['final_value']:.2f}",
                 "final_value_vs_bnh": f"{final_value_vs_bnh:.2f}",
@@ -467,12 +593,18 @@ def _export_to_csv(
                 "total_return_pct": f"{total_return_pct:.2f}",
                 "total_return_pct_vs_bnh": f"{total_return_vs_bnh:.2f}",
                 "total_return_pct_vs_dca": f"{total_return_vs_dca:.2f}",
+                "cagr_pct": f"{cagr * 100:.2f}",
+                "cagr_pct_vs_bnh": f"{cagr_vs_bnh * 100:.2f}",
+                "cagr_pct_vs_dca": f"{cagr_vs_dca * 100:.2f}",
                 "sharpe_ratio": f"{sharpe:.3f}",
                 "sharpe_ratio_vs_bnh": f"{sharpe_vs_bnh:.3f}",
                 "sharpe_ratio_vs_dca": f"{sharpe_vs_dca:.3f}",
                 "max_drawdown_pct": f"{max_dd_pct:.2f}",
                 "max_drawdown_pct_vs_bnh": f"{max_dd_vs_bnh:.2f}",
                 "max_drawdown_pct_vs_dca": f"{max_dd_vs_dca:.2f}",
+                "calmar_ratio": f"{calmar:.3f}",
+                "calmar_ratio_vs_bnh": f"{calmar_vs_bnh:.3f}",
+                "calmar_ratio_vs_dca": f"{calmar_vs_dca:.3f}",
                 "unused_cash": f"{result['final_cash']:.2f}",
                 "unused_cash_vs_bnh": f"{unused_cash_vs_bnh:.2f}",
                 "unused_cash_vs_dca": f"{unused_cash_vs_dca:.2f}",
@@ -486,6 +618,8 @@ def _export_to_csv(
     with csv_path.open("a", newline="", encoding="utf-8") as csvfile:
         fieldnames = [
             "asset",
+            "type",
+            "category",
             "strategy",
             "final_value",
             "final_value_vs_bnh",
@@ -493,12 +627,18 @@ def _export_to_csv(
             "total_return_pct",
             "total_return_pct_vs_bnh",
             "total_return_pct_vs_dca",
+            "cagr_pct",
+            "cagr_pct_vs_bnh",
+            "cagr_pct_vs_dca",
             "sharpe_ratio",
             "sharpe_ratio_vs_bnh",
             "sharpe_ratio_vs_dca",
             "max_drawdown_pct",
             "max_drawdown_pct_vs_bnh",
             "max_drawdown_pct_vs_dca",
+            "calmar_ratio",
+            "calmar_ratio_vs_bnh",
+            "calmar_ratio_vs_dca",
             "unused_cash",
             "unused_cash_vs_bnh",
             "unused_cash_vs_dca",
@@ -589,7 +729,7 @@ def print_summary_table(all_results: list[dict]) -> None:
     print("=" * 200)
 
     # Build header
-    header_parts = [f"{'Asset':<8}"]
+    header_parts = [f"{'Asset':<8}", f"{'Type':<8}", f"{'Category':<15}"]
 
     # Baseline strategy columns
     for name in baseline_names:
@@ -610,6 +750,7 @@ def print_summary_table(all_results: list[dict]) -> None:
     # Rows: one per asset
     for result in all_results:
         symbol = result["symbol"]
+        asset_type, asset_category = get_asset_classification(symbol)
         initial_cash = result["initial_cash"]
         strategy_results = result["results"]
 
@@ -628,7 +769,7 @@ def print_summary_table(all_results: list[dict]) -> None:
         best_strategy = max(returns, key=lambda x: returns[x])
 
         # Build row
-        row_parts = [f"{symbol:<8}"]
+        row_parts = [f"{symbol:<8}", f"{asset_type:<8}", f"{asset_category:<15}"]
 
         # Baseline returns
         for name in baseline_names:
