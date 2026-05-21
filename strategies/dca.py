@@ -5,8 +5,10 @@ from datetime import date
 import backtrader as bt
 import matplotlib.pyplot as plt
 
+from strategies.base_strategy import TradeTrackingMixin
 
-class DollarCostAveraging(bt.Strategy):
+
+class DollarCostAveraging(TradeTrackingMixin, bt.Strategy):
     """
     Dollar Cost Averaging strategy (without external contributions):
     - Starts with initial cash (set via broker, e.g., $10,000)
@@ -27,6 +29,9 @@ class DollarCostAveraging(bt.Strategy):
     )
 
     def __init__(self) -> None:
+        # Initialize trade tracking
+        self._init_trade_tracking()
+
         # series para métricas
         self.dates: list[date] = []
         self.cash: list[float] = []
@@ -84,7 +89,26 @@ class DollarCostAveraging(bt.Strategy):
             # market order (por defecto ejecuta en la barra siguiente)
             self.buy(size=size)
 
+    def notify_order(self, order: bt.Order) -> None:
+        """Handle order notifications and track executions for analytics."""
+        if order.status in [order.Submitted, order.Accepted]:
+            return
+
+        if order.status == order.Completed:
+            # Track order execution for analytics
+            self._track_order_execution(order)
+
+            # Record trade entry immediately
+            if order.isbuy():
+                self._record_trade_entry(order)
+
+        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+            print(f"ORDER FAILED | Status: {order.getstatusname()}")
+
     def stop(self) -> None:
+        # Finalize any OPEN trades as ACCUMULATED
+        self._finalize_open_trades()
+
         plt.figure(figsize=(10, 6))
 
         plt.plot(self.dates, self.cash, label="Cash")

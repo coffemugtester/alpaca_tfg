@@ -5,8 +5,10 @@ from datetime import date
 import backtrader as bt
 import matplotlib.pyplot as plt
 
+from strategies.base_strategy import TradeTrackingMixin
 
-class TacticalMonthlyRedistributed(bt.Strategy):
+
+class TacticalMonthlyRedistributed(TradeTrackingMixin, bt.Strategy):
     """
     Tactical DCA with accumulated monthly savings and risk-aware entry rules.
 
@@ -48,6 +50,9 @@ class TacticalMonthlyRedistributed(bt.Strategy):
     )
 
     def __init__(self) -> None:
+        # Initialize trade tracking
+        self._init_trade_tracking()
+
         self.close = self.datas[0].close
 
         self.sma_fast = bt.ind.SMA(self.close, period=self.p.sma_fast)
@@ -290,7 +295,26 @@ class TacticalMonthlyRedistributed(bt.Strategy):
         if bollinger_breakout:
             self._buy_accumulated_reserve("Bollinger Breakout Base")
 
+    def notify_order(self, order: bt.Order) -> None:
+        """Handle order notifications and track executions for analytics."""
+        if order.status in [order.Submitted, order.Accepted]:
+            return
+
+        if order.status == order.Completed:
+            # Track order execution for analytics
+            self._track_order_execution(order)
+
+            # Record trade entry immediately
+            if order.isbuy():
+                self._record_trade_entry(order)
+
+        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+            print(f"ORDER FAILED | Status: {order.getstatusname()}")
+
     def stop(self) -> None:
+        # Finalize any OPEN trades as ACCUMULATED
+        self._finalize_open_trades()
+
         final_value = self.broker.getvalue()
         final_cash = self.broker.getcash()
         position = self.getposition()

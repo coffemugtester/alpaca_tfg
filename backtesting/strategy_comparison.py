@@ -213,8 +213,11 @@ def run_strategy_comparison(
     # Display comparison
     _print_comparison(results, cash)
 
-    # Export to CSV
+    # Export strategy comparison to CSV
     _export_to_csv(symbol, results, cash, start, end)
+
+    # Export unified trade analytics to CSV
+    _export_trades_csv(symbol, results, strategies_with_timeframes)
 
     # Return results for summary table
     return {
@@ -270,6 +273,7 @@ def _run_single_strategy(
     final_cash = float(cerebro.broker.getcash())
 
     strats = cerebro.runstrats
+    trades_data = []
     if strats and len(strats) > 0:
         strat = strats[0][0]
         sharpe_analysis = strat.analyzers.sharpe.get_analysis()
@@ -281,6 +285,10 @@ def _run_single_strategy(
         if max_dd is not None:
             max_dd = max_dd / 100.0  # Convert to decimal
         order_count = order_analysis.get("order_count", 0)
+
+        # Collect trade data from strategy if it has the mixin
+        if hasattr(strat, 'get_all_trades'):
+            trades_data = strat.get_all_trades()
     else:
         sharpe_ratio = None
         max_dd = None
@@ -292,6 +300,7 @@ def _run_single_strategy(
         "max_drawdown": max_dd,
         "final_cash": final_cash,
         "order_count": order_count,
+        "trades": trades_data,
     }
 
 
@@ -801,3 +810,100 @@ def _format_delta(delta: float) -> str:
         return f"{delta:.1f}%"
     else:
         return "0.0%"
+
+
+def _export_trades_csv(
+    symbol: str,
+    results: dict,
+    strategies_with_timeframes: dict[str, tuple[Type[bt.Strategy], str]],
+) -> None:
+    """
+    Export unified trade analytics to CSV for a single symbol.
+
+    Creates/appends to global_comparison/all_trades.csv with all trades from all strategies.
+
+    Args:
+        symbol: The asset symbol
+        results: Dict mapping strategy names to result dicts (containing 'trades' key)
+        strategies_with_timeframes: Dict mapping strategy names to (strategy_class, timeframe) tuples
+    """
+    output_dir = Path("global_comparison")
+    output_dir.mkdir(exist_ok=True)
+    csv_path = output_dir / "all_trades.csv"
+
+    # Determine if we need to write headers (file doesn't exist or is empty)
+    write_headers = not csv_path.exists() or csv_path.stat().st_size == 0
+
+    # Collect all trades from all strategies for this symbol
+    all_trades_data = []
+
+    for strategy_name, result in results.items():
+        trades = result.get("trades", [])
+
+        if not trades:
+            # No trades for this strategy - skip
+            continue
+
+        # Add strategy and symbol info to each trade
+        for trade in trades:
+            trade_row = {
+                "symbol": symbol,
+                "strategy": strategy_name,
+                "direction": trade["direction"],
+                "entry_time": trade["entry_time"].strftime("%Y-%m-%d %H:%M:%S") if trade["entry_time"] else "",
+                "exit_time": trade["exit_time"].strftime("%Y-%m-%d %H:%M:%S") if trade["exit_time"] else "",
+                "entry_price": f"{trade['entry_price']:.2f}",
+                "exit_price": f"{trade['exit_price']:.2f}" if trade["exit_price"] is not None else "",
+                "position_size": f"{trade['position_size']:.2f}",
+                "cash_deployed": f"{trade['cash_deployed']:.2f}",
+                "cumulative_shares": f"{trade['cumulative_shares']:.2f}",
+                "cumulative_exposure": f"{trade['cumulative_exposure']:.2f}",
+                "remaining_cash": f"{trade['remaining_cash']:.2f}",
+                "total_portfolio_value": f"{trade['total_portfolio_value']:.2f}",
+                "pnl_dollars": f"{trade['pnl_dollars']:.2f}" if trade["pnl_dollars"] is not None else "",
+                "pnl_pct": f"{trade['pnl_pct']:.4f}" if trade["pnl_pct"] is not None else "",
+                "trade_status": trade["trade_status"],
+                "exit_reason": trade["exit_reason"] if trade["exit_reason"] else "",
+                "hold_duration_days": f"{trade['hold_duration_seconds'] / 86400:.2f}" if trade["hold_duration_seconds"] is not None else "",
+                "stop_price": f"{trade['stop_price']:.2f}" if trade["stop_price"] is not None else "",
+            }
+            all_trades_data.append(trade_row)
+
+    if not all_trades_data:
+        # No trades to export for this symbol
+        return
+
+    # Write/append to CSV
+    fieldnames = [
+        "symbol",
+        "strategy",
+        "direction",
+        "entry_time",
+        "exit_time",
+        "entry_price",
+        "exit_price",
+        "position_size",
+        "cash_deployed",
+        "cumulative_shares",
+        "cumulative_exposure",
+        "remaining_cash",
+        "total_portfolio_value",
+        "pnl_dollars",
+        "pnl_pct",
+        "trade_status",
+        "exit_reason",
+        "hold_duration_days",
+        "stop_price",
+    ]
+
+    mode = "w" if write_headers else "a"
+    with open(csv_path, mode, newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+        if write_headers:
+            writer.writeheader()
+
+        for row in all_trades_data:
+            writer.writerow(row)
+
+    print(f"Exported {len(all_trades_data)} trades for {symbol} to: {csv_path}")

@@ -44,8 +44,10 @@ from pathlib import Path
 import backtrader as bt
 import matplotlib.pyplot as plt
 
+from strategies.base_strategy import TradeTrackingMixin
 
-class IntradayVolatilityBands(bt.Strategy):
+
+class IntradayVolatilityBands(TradeTrackingMixin, bt.Strategy):
     params = dict(
         # Daily trend filter
         daily_sma_period=200,  # 200-day SMA for bull/bear filter
@@ -81,6 +83,9 @@ class IntradayVolatilityBands(bt.Strategy):
     )
 
     def __init__(self) -> None:
+        # Initialize trade tracking from mixin
+        self._init_trade_tracking()
+
         # Data feeds: datas[0] = minute data, datas[1] = daily data (if provided)
         self.minute_data = self.datas[0] if len(self.datas) > 0 else self.data
         self.has_daily_data = len(self.datas) > 1
@@ -106,6 +111,7 @@ class IntradayVolatilityBands(bt.Strategy):
 
         # Tracking
         self.order = None
+        self.current_trade_id = None  # Track current open trade for updating on exit
         self.entry_price = None
         self.entry_time = None
         self.stop_price = None
@@ -117,8 +123,6 @@ class IntradayVolatilityBands(bt.Strategy):
         self.current_trading_date = None
 
         # Performance tracking
-        self.trades_log = []  # Order-level executions
-        self.completed_trades = []  # Full round-trip trade analytics
         self.daily_pnl = []
 
     def prenext_open(self) -> None:
@@ -395,24 +399,16 @@ class IntradayVolatilityBands(bt.Strategy):
                     return
 
     def _record_trade(self, exit_reason: str, exit_price: float, exit_time, pnl_pct: float, pnl_dollars: float) -> None:
-        """Record completed trade for analytics and reset entry tracking."""
-        direction = "LONG" if self.position_size > 0 else "SHORT"
-
-        trade_record = {
-            'direction': direction,
-            'entry_time': self.entry_time,
-            'exit_time': exit_time,
-            'entry_price': self.entry_price,
-            'exit_price': exit_price,
-            'stop_price': self.stop_price,
-            'position_size': self.position_size,
-            'pnl_pct': pnl_pct,
-            'pnl_dollars': pnl_dollars,
-            'exit_reason': exit_reason,
-            'hold_duration_seconds': (exit_time - self.entry_time).total_seconds(),
-        }
-
-        self.completed_trades.append(trade_record)
+        """Update existing trade with exit information."""
+        # Update the trade record with exit info
+        if self.current_trade_id:
+            self._update_trade_exit(
+                trade_id=self.current_trade_id,
+                exit_time=exit_time,
+                exit_price=exit_price,
+                exit_reason=exit_reason,
+            )
+            self.current_trade_id = None
 
         # Reset entry tracking so we can take new positions
         self.entry_price = None
@@ -426,15 +422,16 @@ class IntradayVolatilityBands(bt.Strategy):
             return
 
         if order.status == order.Completed:
-            action = "BUY" if order.isbuy() else "SELL"
-            self.trades_log.append({
-                'datetime': self.minute_data.datetime.datetime(0),
-                'action': action,
-                'price': order.executed.price,
-                'size': order.executed.size,
-                'value': order.executed.value,
-                'comm': order.executed.comm,
-            })
+            # Track order execution
+            self._track_order_execution(order)
+
+            # Record trade entry immediately when BUY order completes
+            if order.isbuy():
+                self.current_trade_id = self._record_trade_entry(
+                    order,
+                    direction='LONG',
+                    stop_price=self.stop_price
+                )
 
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             print(f"ORDER FAILED | Status: {order.getstatusname()}")
@@ -443,33 +440,37 @@ class IntradayVolatilityBands(bt.Strategy):
 
     def stop(self) -> None:
         """Called at end of backtest."""
+        # Finalize any open trades as ACCUMULATED
+        self._finalize_open_trades()
+
         final_value = float(self.broker.getvalue())
 
-        # Calculate analytics
-        winning_trades = [t for t in self.completed_trades if t['pnl_dollars'] > 0]
-        losing_trades = [t for t in self.completed_trades if t['pnl_dollars'] <= 0]
+        # Calculate analytics using mixin's all trades (filter for COMPLETED only)
+        completed_trades = [t for t in self._all_trades if t['trade_status'] == 'COMPLETED']
+        winning_trades = [t for t in completed_trades if t['pnl_dollars'] > 0]
+        losing_trades = [t for t in completed_trades if t['pnl_dollars'] <= 0]
 
         win_count = len(winning_trades)
         loss_count = len(losing_trades)
-        win_rate = (win_count / len(self.completed_trades) * 100) if self.completed_trades else 0
+        win_rate = (win_count / len(completed_trades) * 100) if completed_trades else 0
 
         avg_win = sum(t['pnl_dollars'] for t in winning_trades) / win_count if win_count > 0 else 0
         avg_loss = sum(t['pnl_dollars'] for t in losing_trades) / loss_count if loss_count > 0 else 0
         profit_factor = abs(avg_win * win_count / (avg_loss * loss_count)) if (avg_loss != 0 and loss_count > 0) else 0
 
         # Exit reason breakdown
-        stop_loss_exits = len([t for t in self.completed_trades if t['exit_reason'] == 'STOP_LOSS'])
-        take_profit_exits = len([t for t in self.completed_trades if t['exit_reason'] == 'TAKE_PROFIT'])
+        stop_loss_exits = len([t for t in completed_trades if t['exit_reason'] == 'STOP_LOSS'])
+        take_profit_exits = len([t for t in completed_trades if t['exit_reason'] == 'TAKE_PROFIT'])
 
         # Average hold time
-        avg_hold_seconds = sum(t['hold_duration_seconds'] for t in self.completed_trades) / len(self.completed_trades) if self.completed_trades else 0
+        avg_hold_seconds = sum(t['hold_duration_seconds'] for t in completed_trades) / len(completed_trades) if completed_trades else 0
         avg_hold_hours = avg_hold_seconds / 3600
 
         print(f"\n{'='*70}")
         print(f"Volatility Bands Swing Trading Strategy - Results")
         print(f"{'='*70}")
         print(f"Final Portfolio Value: ${final_value:,.2f}")
-        print(f"Total Completed Trades: {len(self.completed_trades)}")
+        print(f"Total Completed Trades: {len(completed_trades)}")
 
         print(f"\nPerformance Metrics:")
         print(f"  Win Rate: {win_rate:.1f}% ({win_count}W / {loss_count}L)")
@@ -478,8 +479,8 @@ class IntradayVolatilityBands(bt.Strategy):
         print(f"  Avg Hold Time: {avg_hold_hours:.1f} hours")
 
         print(f"\nExit Breakdown:")
-        print(f"  Stop Loss: {stop_loss_exits} ({stop_loss_exits/len(self.completed_trades)*100:.1f}%)" if self.completed_trades else "  Stop Loss: 0")
-        print(f"  Take Profit: {take_profit_exits} ({take_profit_exits/len(self.completed_trades)*100:.1f}%)" if self.completed_trades else "  Take Profit: 0")
+        print(f"  Stop Loss: {stop_loss_exits} ({stop_loss_exits/len(completed_trades)*100:.1f}%)" if completed_trades else "  Stop Loss: 0")
+        print(f"  Take Profit: {take_profit_exits} ({take_profit_exits/len(completed_trades)*100:.1f}%)" if completed_trades else "  Take Profit: 0")
 
         print(f"\nStrategy Parameters:")
         print(f"  ATR Period: {self.p.atr_period} min | SMA Period: {self.p.sma_period} min")
@@ -492,15 +493,10 @@ class IntradayVolatilityBands(bt.Strategy):
         print(f"  Overnight Positions: ALLOWED")
         print(f"{'='*70}\n")
 
-        # Export trade analytics to CSV only if we have completed trades
-        if self.p.export_trades and len(self.completed_trades) > 0:
-            self._export_trade_analytics()
-        elif self.p.export_trades and len(self.trades_log) > 0:
-            # Fallback: if no completed trades but have entries, export entry-only data
-            print("Note: No completed trades to export. Exporting entry-only data.")
-            self._export_entry_analytics()
+        # Trade analytics will be exported centrally by strategy_comparison.py
+        # No longer export individual CSV files here
 
-        if self.p.show_plot and len(self.completed_trades) > 0:
+        if self.p.show_plot and len(completed_trades) > 0:
             self._plot_results()
 
     def _export_entry_analytics(self) -> None:
@@ -622,8 +618,8 @@ class IntradayVolatilityBands(bt.Strategy):
 
         # Plot 2: Trade count over time
         plt.subplot(2, 1, 2)
-        if self.trades_log:
-            dates = [t['datetime'] for t in self.trades_log]
+        if self._trades_log:
+            dates = [t['datetime'] for t in self._trades_log]
             cumulative_trades = list(range(1, len(dates) + 1))
             plt.plot(dates, cumulative_trades, label='Cumulative Trades', color='green')
             plt.xlabel('Date')

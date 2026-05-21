@@ -5,8 +5,10 @@ from datetime import date
 import backtrader as bt
 import matplotlib.pyplot as plt
 
+from strategies.base_strategy import TradeTrackingMixin
 
-class BuyAndHold(bt.Strategy):
+
+class BuyAndHold(TradeTrackingMixin, bt.Strategy):
     params = dict(
         allow_fractional=True,
         cash_buffer=0.995,  # invierte el 99.5% para evitar rechazo por redondeo/gap
@@ -14,6 +16,9 @@ class BuyAndHold(bt.Strategy):
     )
 
     def __init__(self) -> None:
+        # Initialize trade tracking
+        self._init_trade_tracking()
+
         self.dates: list[date] = []
         self.cash: list[float] = []
         self.position_value: list[float] = []
@@ -63,6 +68,13 @@ class BuyAndHold(bt.Strategy):
             return
 
         if order.status == order.Completed:
+            # Track order execution for analytics
+            self._track_order_execution(order)
+
+            # Record trade entry immediately
+            if order.isbuy():
+                self._record_trade_entry(order)
+
             action = "BUY" if order.isbuy() else "SELL"
             print(
                 f"{action} EXECUTED | Price: {order.executed.price:.2f} | "
@@ -79,6 +91,9 @@ class BuyAndHold(bt.Strategy):
         self.order = None
 
     def stop(self) -> None:
+        # Finalize any OPEN trades as ACCUMULATED
+        self._finalize_open_trades()
+
         plt.figure(figsize=(10, 6))
 
         plt.plot(self.dates, self.cash, label="Cash")
