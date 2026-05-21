@@ -46,12 +46,25 @@ STRATEGY_REGISTRY = {
 # Default assets for multi-asset comparison mode
 DEFAULT_ASSETS = [
     # Indices & ETFs
-    "SPY", "QQQ", "IWM", "GLD", "TLT", "XLE",
+    "SPY",
+    "QQQ",
+    "IWM",
+    "GLD",
+    "TLT",
+    "XLE",
     # Tech
-    "AAPL", "AMD",
+    "AAPL",
+    "AMD",
     # Travel Services
-    "BKNG", "RCL", "CCL", "EXPE", "NCLH",
-    "MMYT", "TNL", "LIND", "TRIP",
+    "BKNG",
+    "RCL",
+    "CCL",
+    "EXPE",
+    "NCLH",
+    "MMYT",
+    "TNL",
+    "LIND",
+    "TRIP",
 ]
 
 
@@ -377,7 +390,9 @@ def _run_single_symbol_backtest(
     """
     symbol_start = time.time()
     try:
-        print(f"\n[PARALLEL] Starting {symbol} at {datetime.now().strftime('%H:%M:%S')}")
+        print(
+            f"\n[PARALLEL] Starting {symbol} at {datetime.now().strftime('%H:%M:%S')}"
+        )
 
         result = run_strategy_comparison(
             symbol=symbol,
@@ -492,9 +507,7 @@ def handle_compare_multi_command(
     # Force disable plots in multi-asset mode
     show_plots = args.plot
     if len(symbols) > 1 and args.plot:
-        print(
-            "WARNING: --plot flag ignored in multi-asset mode (too many windows)\n"
-        )
+        print("WARNING: --plot flag ignored in multi-asset mode (too many windows)\n")
         show_plots = False
 
     # Get strategies with their timeframes
@@ -513,7 +526,9 @@ def handle_compare_multi_command(
         strategies_with_timeframes = {
             k: v for k, v in all_strategies.items() if k in args.strategies
         }
-        print(f"\nRunning {len(strategies_with_timeframes)} strategies: {', '.join(strategies_with_timeframes.keys())}\n")
+        print(
+            f"\nRunning {len(strategies_with_timeframes)} strategies: {', '.join(strategies_with_timeframes.keys())}\n"
+        )
     else:
         strategies_with_timeframes = all_strategies
 
@@ -571,7 +586,9 @@ def handle_compare_multi_command(
         print(f"PARALLEL EXECUTION COMPLETE")
         print(f"Total time: {overall_duration:.1f}s")
         print(f"Average: {overall_duration/len(symbols):.1f}s per symbol")
-        print(f"Speedup: ~{(len(symbols)*60)/overall_duration:.1f}x vs sequential (estimated)")
+        print(
+            f"Speedup: ~{(len(symbols)*60)/overall_duration:.1f}x vs sequential (estimated)"
+        )
         print(f"{'='*70}\n")
 
     else:
@@ -627,7 +644,10 @@ def handle_analyze_volatility_command(
         default_assets: List of default asset symbols to use if --symbols not provided
     """
     from data.volatility_analyzer import analyze_symbol_volatility
-    from data.volatility_export import export_volatility_to_csv, print_volatility_summary_table
+    from data.volatility_export import (
+        export_volatility_to_csv,
+        print_volatility_summary_table,
+    )
 
     # Determine which symbols to analyze
     if args.symbols is None:
