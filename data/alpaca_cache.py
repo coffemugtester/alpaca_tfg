@@ -120,6 +120,12 @@ class AlpacaCache:
         if df.empty:
             return None
 
+        # Filter out NaT (Not a Time) values that cause Backtrader errors
+        df = df[df.index.notna()]
+
+        if df.empty:
+            return None
+
         # Check if we have complete data
         # Allow some tolerance for weekends/holidays
         # Expect ~252 trading days per year
@@ -173,6 +179,12 @@ class AlpacaCache:
         if df.empty:
             return None
 
+        # Filter out NaT (Not a Time) values that cause Backtrader errors
+        df = df[df.index.notna()]
+
+        if df.empty:
+            return None
+
         # Check if we have reasonable data coverage
         # Market hours: 6.5 hours/day * 60 min = 390 bars/day
         # Rough estimate of expected bars
@@ -202,23 +214,28 @@ class AlpacaCache:
         # Prepare data for insert
         df_copy = df.copy()
         df_copy['symbol'] = symbol
-        df_copy['date'] = df_copy.index.date
+        # Convert to timezone-naive UTC before storing to ensure uniqueness
+        df_copy['date'] = pd.to_datetime(df_copy.index).tz_convert('UTC').tz_localize(None).date
 
         # Select columns in correct order
         insert_df = df_copy[['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']]
 
         # Insert in batches to avoid SQLite's 999 variable limit
         # With 7 columns, max rows per batch = 999/7 = ~142
+        # Use INSERT OR REPLACE to handle duplicates gracefully
         batch_size = 140
+        cursor = conn.cursor()
+
         for i in range(0, len(insert_df), batch_size):
             batch = insert_df.iloc[i:i + batch_size]
-            batch.to_sql(
-                'daily_bars',
-                conn,
-                if_exists='append',
-                index=False,
-                method='multi'
-            )
+
+            # Use INSERT OR REPLACE for each row
+            for _, row in batch.iterrows():
+                cursor.execute("""
+                    INSERT OR REPLACE INTO daily_bars
+                    (symbol, date, open, high, low, close, volume)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, tuple(row))
 
         conn.commit()
         conn.close()
@@ -239,27 +256,32 @@ class AlpacaCache:
         # Prepare data for insert
         df_copy = df.copy()
         df_copy['symbol'] = symbol
-        df_copy['timestamp'] = df_copy.index
+        # Convert to timezone-naive UTC before storing to ensure uniqueness
+        # All timestamps normalized to UTC without timezone suffix
+        df_copy['timestamp'] = pd.to_datetime(df_copy.index).tz_convert('UTC').tz_localize(None)
 
         # Select columns in correct order
         insert_df = df_copy[['symbol', 'timestamp', 'open', 'high', 'low', 'close', 'volume']]
 
         # Insert in batches to avoid SQLite's 999 variable limit
         # With 7 columns, max rows per batch = 999/7 = ~142
+        # Use INSERT OR REPLACE to handle duplicates gracefully
         batch_size = 140
         total_rows = len(insert_df)
+        cursor = conn.cursor()
 
-        print(f"Inserting {total_rows:,} minute bars in batches of {batch_size:,}...")
+        print(f"Inserting {total_rows:,} minute bars with duplicate handling...")
 
         for i in range(0, total_rows, batch_size):
             batch = insert_df.iloc[i:i + batch_size]
-            batch.to_sql(
-                'minute_bars',
-                conn,
-                if_exists='append',
-                index=False,
-                method='multi'
-            )
+
+            # Use INSERT OR REPLACE for each row
+            for _, row in batch.iterrows():
+                cursor.execute("""
+                    INSERT OR REPLACE INTO minute_bars
+                    (symbol, timestamp, open, high, low, close, volume)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, tuple(row))
 
             # Progress indicator for large datasets
             if (i + batch_size) % 50000 == 0 or i + batch_size >= total_rows:

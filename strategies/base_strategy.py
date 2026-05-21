@@ -12,37 +12,37 @@ All strategies should inherit from TradeTrackingMixin to enable analytics.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol, TYPE_CHECKING
 
 import backtrader as bt
+
+
+class _StrategyProtocol(Protocol):
+    """Protocol defining attributes expected from bt.Strategy."""
+    data: bt.feeds.DataBase
+    broker: bt.brokers.BackBroker
+
+    def getposition(self, data: bt.feeds.DataBase | None = None) -> bt.Position: ...
 
 
 class TradeTrackingMixin:
     """
     Mixin class for tracking trades across all strategies.
 
-    Provides automatic tracking of:
-    - All order executions (buy/sell)
-    - Completed round-trip trades (entry + exit) - COMPLETED status
-    - Accumulated entries (buy-and-hold) - ACCUMULATED status
+    This mixin expects to be used with a class that provides:
+    - self.data (bt.feeds.DataBase)
+    - self.broker (bt.brokers.BackBroker)
+    - self.getposition() method
 
-    Usage:
-        # For accumulation strategies (DCA, Buy & Hold):
-        class MyStrategy(TradeTrackingMixin, bt.Strategy):
-            def __init__(self):
-                super().__init__()
-                self._init_trade_tracking()
-                # ... rest of strategy init
-
-            def notify_order(self, order):
-                if order.status == order.Completed:
-                    self._track_order_execution(order)
-                    if order.isbuy():
-                        self._record_accumulated_entry(order)
-
-        # For round-trip strategies (Intraday Vol Bands):
-        # Use _record_completed_trade() when exiting positions
+    Typically used with bt.Strategy subclasses.
     """
+
+    # Declare attributes that will be provided by bt.Strategy
+    if TYPE_CHECKING:
+        data: bt.feeds.DataBase
+        broker: bt.brokers.BackBroker
+
+        def getposition(self, data: bt.feeds.DataBase | None = None) -> bt.Position: ...
 
     def _init_trade_tracking(self) -> None:
         """Initialize trade tracking variables. Call this in strategy __init__()."""
@@ -54,10 +54,10 @@ class TradeTrackingMixin:
 
         # Map to track open trades by a unique ID for updating on exit
         self._open_trade_map: dict[str, int] = {}  # trade_id -> index in _all_trades
-        self._trade_id_counter = 0
+        self._trade_id_counter: int = 0
 
         # Strategy name (set by subclass or auto-detected)
-        self._strategy_name = self.__class__.__name__
+        self._strategy_name: str = self.__class__.__name__
 
     def _track_order_execution(self, order: bt.Order) -> None:
         """
@@ -68,22 +68,24 @@ class TradeTrackingMixin:
             return
 
         action = "BUY" if order.isbuy() else "SELL"
-        execution_time = self.data.datetime.datetime(0)
+        execution_time = self.data.datetime.datetime(0)  # type: ignore[attr-defined]
 
         # Log the order execution internally
-        self._trades_log.append({
-            'datetime': execution_time,
-            'action': action,
-            'price': order.executed.price,
-            'size': order.executed.size,
-            'value': order.executed.value,
-            'comm': order.executed.comm,
-        })
+        self._trades_log.append(
+            {
+                "datetime": execution_time,
+                "action": action,
+                "price": order.executed.price,
+                "size": order.executed.size,
+                "value": order.executed.value,
+                "comm": order.executed.comm,
+            }
+        )
 
     def _record_trade_entry(
         self,
         order: bt.Order,
-        direction: str = 'LONG',
+        direction: str = "LONG",
         stop_price: float | None = None,
         trade_id: str | None = None,
     ) -> str:
@@ -110,36 +112,36 @@ class TradeTrackingMixin:
             trade_id = f"trade_{self._trade_id_counter}"
             self._trade_id_counter += 1
 
-        execution_time = self.data.datetime.datetime(0)
+        execution_time = self.data.datetime.datetime(0)  # type: ignore[attr-defined]
         entry_price = order.executed.price
         position_size = order.executed.size
         cash_deployed = entry_price * position_size
 
         # Get portfolio state from broker
-        portfolio_value = float(self.broker.getvalue())
-        remaining_cash = float(self.broker.getcash())
+        portfolio_value = float(self.broker.getvalue())  # type: ignore[attr-defined]
+        remaining_cash = float(self.broker.getcash())  # type: ignore[attr-defined]
         cumulative_exposure = portfolio_value - remaining_cash
-        cumulative_shares = float(self.getposition().size)
+        cumulative_shares = float(self.getposition().size)  # type: ignore[attr-defined]
 
         trade_record = {
-            'trade_id': trade_id,
-            'direction': direction,
-            'entry_time': execution_time,
-            'exit_time': None,
-            'entry_price': entry_price,
-            'exit_price': None,
-            'position_size': position_size,
-            'cash_deployed': cash_deployed,
-            'cumulative_shares': cumulative_shares,
-            'cumulative_exposure': cumulative_exposure,
-            'remaining_cash': remaining_cash,
-            'total_portfolio_value': portfolio_value,
-            'pnl_dollars': None,
-            'pnl_pct': None,
-            'trade_status': 'OPEN',
-            'exit_reason': None,
-            'hold_duration_seconds': None,
-            'stop_price': stop_price,
+            "trade_id": trade_id,
+            "direction": direction,
+            "entry_time": execution_time,
+            "exit_time": None,
+            "entry_price": entry_price,
+            "exit_price": None,
+            "position_size": position_size,
+            "cash_deployed": cash_deployed,
+            "cumulative_shares": cumulative_shares,
+            "cumulative_exposure": cumulative_exposure,
+            "remaining_cash": remaining_cash,
+            "total_portfolio_value": portfolio_value,
+            "pnl_dollars": None,
+            "pnl_pct": None,
+            "trade_status": "OPEN",
+            "exit_reason": None,
+            "hold_duration_seconds": None,
+            "stop_price": stop_price,
         }
 
         # Store trade and track its index
@@ -177,37 +179,39 @@ class TradeTrackingMixin:
         trade = self._all_trades[trade_index]
 
         # Calculate P&L
-        entry_price = trade['entry_price']
-        position_size = trade['position_size']
-        direction = trade['direction']
+        entry_price = trade["entry_price"]
+        position_size = trade["position_size"]
+        direction = trade["direction"]
 
-        if direction == 'LONG':
+        if direction == "LONG":
             pnl_pct = (exit_price - entry_price) / entry_price
             pnl_dollars = (exit_price - entry_price) * position_size
         else:  # SHORT
             pnl_pct = (entry_price - exit_price) / entry_price
             pnl_dollars = (entry_price - exit_price) * position_size
 
-        hold_duration_seconds = (exit_time - trade['entry_time']).total_seconds()
+        hold_duration_seconds = (exit_time - trade["entry_time"]).total_seconds()
 
         # Get updated portfolio state
-        portfolio_value = float(self.broker.getvalue())
-        remaining_cash = float(self.broker.getcash())
+        portfolio_value = float(self.broker.getvalue())  # type: ignore[attr-defined]
+        remaining_cash = float(self.broker.getcash())  # type: ignore[attr-defined]
         cumulative_exposure = portfolio_value - remaining_cash
 
         # Update the trade record
-        trade.update({
-            'exit_time': exit_time,
-            'exit_price': exit_price,
-            'pnl_pct': pnl_pct,
-            'pnl_dollars': pnl_dollars,
-            'exit_reason': exit_reason,
-            'hold_duration_seconds': hold_duration_seconds,
-            'trade_status': 'COMPLETED',
-            'cumulative_exposure': cumulative_exposure,
-            'remaining_cash': remaining_cash,
-            'total_portfolio_value': portfolio_value,
-        })
+        trade.update(
+            {
+                "exit_time": exit_time,
+                "exit_price": exit_price,
+                "pnl_pct": pnl_pct,
+                "pnl_dollars": pnl_dollars,
+                "exit_reason": exit_reason,
+                "hold_duration_seconds": hold_duration_seconds,
+                "trade_status": "COMPLETED",
+                "cumulative_exposure": cumulative_exposure,
+                "remaining_cash": remaining_cash,
+                "total_portfolio_value": portfolio_value,
+            }
+        )
 
         # Remove from open trades map
         del self._open_trade_map[trade_id]
@@ -224,7 +228,7 @@ class TradeTrackingMixin:
             trade = self._all_trades[trade_index]
 
             # Mark as accumulated (no exit occurred)
-            trade['trade_status'] = 'ACCUMULATED'
+            trade["trade_status"] = "ACCUMULATED"
 
             # Remove from open map
             del self._open_trade_map[trade_id]

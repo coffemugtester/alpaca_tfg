@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import csv
 import os
-from datetime import time, date
+from datetime import datetime, time, date
 from pathlib import Path
 
 import backtrader as bt
@@ -110,20 +110,20 @@ class IntradayVolatilityBands(TradeTrackingMixin, bt.Strategy):
             self.daily_sma = None
 
         # Tracking
-        self.order = None
-        self.current_trade_id = None  # Track current open trade for updating on exit
-        self.entry_price = None
-        self.entry_time = None
-        self.stop_price = None
-        self.trade_count = 0
-        self.position_size = 0
+        self.order: bt.Order | None = None
+        self.current_trade_id: str | None = None  # Track current open trade for updating on exit
+        self.entry_price: float | None = None
+        self.entry_time: datetime | None = None
+        self.stop_price: float | None = None
+        self.trade_count: int = 0
+        self.position_size: float = 0
 
         # Daily entry limit tracking
-        self.daily_entry_count = 0
-        self.current_trading_date = None
+        self.daily_entry_count: int = 0
+        self.current_trading_date: date | None = None
 
         # Performance tracking
-        self.daily_pnl = []
+        self.daily_pnl: list[float] = []
 
     def prenext_open(self) -> None:
         """Called during warm-up period before indicators are ready."""
@@ -398,7 +398,7 @@ class IntradayVolatilityBands(TradeTrackingMixin, bt.Strategy):
                     self._record_trade('STOP_LOSS', current_price, current_time, pnl_pct, pnl_dollars)
                     return
 
-    def _record_trade(self, exit_reason: str, exit_price: float, exit_time, pnl_pct: float, pnl_dollars: float) -> None:
+    def _record_trade(self, exit_reason: str, exit_price: float, exit_time: datetime, pnl_pct: float, pnl_dollars: float) -> None:
         """Update existing trade with exit information."""
         # Update the trade record with exit info
         if self.current_trade_id:
