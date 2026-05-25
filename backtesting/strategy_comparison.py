@@ -95,6 +95,7 @@ def run_strategy_comparison(
     show_plots: bool = False,
     strategies: dict[str, Type[bt.Strategy]] | None = None,
     strategies_with_timeframes: dict[str, tuple[Type[bt.Strategy], str]] | None = None,
+    refresh_cache: bool = False,
 ) -> dict:
     """
     Run multi-strategy comparison on a single asset.
@@ -109,6 +110,7 @@ def run_strategy_comparison(
         show_plots: Whether to display matplotlib plots (default False)
         strategies: Dict mapping display names to strategy classes (DEPRECATED - use strategies_with_timeframes)
         strategies_with_timeframes: Dict mapping display names to (strategy_class, timeframe) tuples
+        refresh_cache: If True, force refresh from API bypassing cache
 
     Returns:
         Dict with symbol and strategy results
@@ -149,7 +151,7 @@ def run_strategy_comparison(
         if timeframe == "minute":
             from data.alpaca_data import fetch_minute_bars
             print(f"Fetching minute data...")
-            minute_df = fetch_minute_bars(symbol=symbol, start=start, end=end)
+            minute_df = fetch_minute_bars(symbol=symbol, start=start, end=end, refresh_cache=refresh_cache)
 
             if minute_df is None or len(minute_df) == 0:
                 print(f"ERROR: No minute data available for {strategy_name}")
@@ -167,13 +169,13 @@ def run_strategy_comparison(
 
             # Also fetch daily data for trend filter
             print(f"Fetching daily data (trend filter)...")
-            daily_df = fetch_daily_bars(symbol=symbol, start=start, end=end)
+            daily_df = fetch_daily_bars(symbol=symbol, start=start, end=end, refresh_cache=refresh_cache)
             if daily_df is not None and len(daily_df) > 0:
                 daily_feed = df_to_bt_feed(daily_df)
                 print(f"Loaded {len(daily_df)} daily bars for trend filter")
         else:
             print(f"Fetching daily data...")
-            df = fetch_daily_bars(symbol=symbol, start=start, end=end)
+            df = fetch_daily_bars(symbol=symbol, start=start, end=end, refresh_cache=refresh_cache)
 
             if df is None or len(df) == 0:
                 print(f"ERROR: No daily data available for {strategy_name}")

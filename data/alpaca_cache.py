@@ -245,13 +245,15 @@ class AlpacaCache:
 
         # Check if we have reasonable data coverage
         # Market hours: 6.5 hours/day * 60 min = 390 bars/day
-        # Rough estimate of expected bars
+        # Estimate based on trading days (~252/year = 69% of calendar days)
         total_days = (end - start).days
-        expected_bars = total_days * 390 * 0.7  # 70% of theoretical (accounts for gaps)
+        trading_days_estimate = total_days * 0.69  # ~252 trading days per 365 calendar days
+        expected_bars = trading_days_estimate * 390 * 0.5  # 50% of theoretical (accounts for data gaps, early closes)
         actual_bars = len(df)
 
-        # If we have at least 60% of expected bars, consider it complete
-        if actual_bars < expected_bars * 0.6:
+        # If we have at least 40% of expected bars, consider it complete
+        # Lower threshold for minute data due to historical data availability limitations
+        if actual_bars < expected_bars * 0.4:
             return None
 
         return df

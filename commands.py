@@ -255,6 +255,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run backtests in parallel (faster for multiple symbols)",
     )
     compare_multi_parser.add_argument(
+        "--refresh-cache",
+        action="store_true",
+        help="Force refresh data from API, bypassing cache",
+    )
+    compare_multi_parser.add_argument(
         "--strategies",
         type=str,
         nargs="+",
@@ -417,7 +422,7 @@ def _run_single_symbol_backtest(
         return None
 
 
-def prefetch_data_for_symbols(symbols: list[str], start, end) -> None:
+def prefetch_data_for_symbols(symbols: list[str], start, end, refresh_cache: bool = False) -> None:
     """
     Pre-fetch all data for symbols to populate cache and avoid concurrent writes.
 
@@ -425,11 +430,14 @@ def prefetch_data_for_symbols(symbols: list[str], start, end) -> None:
         symbols: List of ticker symbols
         start: Start datetime
         end: End datetime
+        refresh_cache: If True, force refresh from API bypassing cache
     """
     from data.alpaca_data import fetch_daily_bars, fetch_minute_bars
 
     print(f"\n{'='*70}")
     print(f"PRE-FETCHING DATA FOR {len(symbols)} SYMBOLS")
+    if refresh_cache:
+        print(f"CACHE REFRESH MODE: Forcing API fetch")
     print(f"{'='*70}")
     print(f"Start: {start}")
     print(f"End: {end}")
@@ -444,7 +452,7 @@ def prefetch_data_for_symbols(symbols: list[str], start, end) -> None:
         # Fetch daily data
         try:
             daily_start = time.time()
-            fetch_daily_bars(symbol, start, end)
+            fetch_daily_bars(symbol, start, end, refresh_cache=refresh_cache)
             daily_duration = time.time() - daily_start
             print(f"  ✓ Daily data fetched ({daily_duration:.1f}s)")
         except Exception as e:
@@ -454,7 +462,7 @@ def prefetch_data_for_symbols(symbols: list[str], start, end) -> None:
         # Fetch minute data
         try:
             minute_start = time.time()
-            fetch_minute_bars(symbol, start, end)
+            fetch_minute_bars(symbol, start, end, refresh_cache=refresh_cache)
             minute_duration = time.time() - minute_start
             print(f"  ✓ Minute data fetched ({minute_duration:.1f}s)")
         except Exception as e:
@@ -539,7 +547,7 @@ def handle_compare_multi_command(
         print(f"\n🚀 PARALLEL MODE: Using up to {os.cpu_count()} workers\n")
 
         # Pre-fetch all data to avoid cache conflicts
-        prefetch_data_for_symbols(symbols, start, end)
+        prefetch_data_for_symbols(symbols, start, end, refresh_cache=args.refresh_cache)
 
         # Execute in parallel
         all_results = []
@@ -611,6 +619,7 @@ def handle_compare_multi_command(
                     slippage=args.slippage,
                     show_plots=show_plots,
                     strategies_with_timeframes=strategies_with_timeframes,
+                    refresh_cache=args.refresh_cache,
                 )
                 all_results.append(result)
 

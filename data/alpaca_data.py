@@ -15,6 +15,7 @@ def fetch_daily_bars(
     start: datetime,
     end: datetime,
     adjustment: str = "split",
+    refresh_cache: bool = False,
 ) -> pd.DataFrame:
     """
     Fetch daily bars for a single symbol from Alpaca and return a clean DataFrame.
@@ -22,18 +23,28 @@ def fetch_daily_bars(
     Uses cache-first strategy: queries cache before making API calls.
     If complete data is cached, returns immediately without API call.
     Otherwise, fetches from API and stores in cache for future runs.
+
+    Args:
+        symbol: Stock ticker symbol
+        start: Start datetime
+        end: End datetime
+        adjustment: Price adjustment type (default: "split")
+        refresh_cache: If True, skip cache and force API fetch (default: False)
     """
-    # Check cache first
+    # Check cache first (unless refresh_cache is True)
     cache = AlpacaCache()
 
-    try:
-        cached_df = cache.query_daily_bars(symbol, start, end)
+    if not refresh_cache:
+        try:
+            cached_df = cache.query_daily_bars(symbol, start, end)
 
-        if cached_df is not None:
-            print(f"Cache HIT: {symbol} daily {start.date()} to {end.date()} ({len(cached_df)} rows from cache)")
-            return cached_df
-    except Exception as e:
-        print(f"Cache error (will fetch from API): {e}")
+            if cached_df is not None:
+                print(f"Cache HIT: {symbol} daily {start.date()} to {end.date()} ({len(cached_df)} rows from cache)")
+                return cached_df
+        except Exception as e:
+            print(f"Cache error (will fetch from API): {e}")
+    else:
+        print(f"Cache REFRESH: Forcing API fetch for {symbol} daily")
 
     # Cache miss - fetch from API
     print(f"Cache MISS: Fetching {symbol} daily from API...")
@@ -70,6 +81,7 @@ def fetch_minute_bars(
     start: datetime,
     end: datetime,
     adjustment: str = "split",
+    refresh_cache: bool = False,
 ) -> pd.DataFrame:
     """
     Fetch minute bars for a single symbol from Alpaca and return a clean DataFrame.
@@ -86,6 +98,7 @@ def fetch_minute_bars(
         start: Start datetime
         end: End datetime
         adjustment: Price adjustment type (default: "split")
+        refresh_cache: If True, skip cache and force API fetch (default: False)
 
     Returns:
         DataFrame with OHLCV data at minute resolution
@@ -94,17 +107,20 @@ def fetch_minute_bars(
         Alpaca's historical minute data availability may be limited (typically 1-5 years).
         If data is unavailable for the full period, returns whatever is available.
     """
-    # Check cache first
+    # Check cache first (unless refresh_cache is True)
     cache = AlpacaCache()
 
-    try:
-        cached_df = cache.query_minute_bars(symbol, start, end)
+    if not refresh_cache:
+        try:
+            cached_df = cache.query_minute_bars(symbol, start, end)
 
-        if cached_df is not None:
-            print(f"Cache HIT: {symbol} minute {start.date()} to {end.date()} ({len(cached_df)} rows from cache)")
-            return cached_df
-    except Exception as e:
-        print(f"Cache error (will fetch from API): {e}")
+            if cached_df is not None:
+                print(f"Cache HIT: {symbol} minute {start.date()} to {end.date()} ({len(cached_df)} rows from cache)")
+                return cached_df
+        except Exception as e:
+            print(f"Cache error (will fetch from API): {e}")
+    else:
+        print(f"Cache REFRESH: Forcing API fetch for {symbol} minute")
 
     # Cache miss - fetch from API
     print(f"Cache MISS: Fetching {symbol} minute from API...")
