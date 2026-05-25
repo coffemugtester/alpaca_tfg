@@ -30,6 +30,7 @@ from strategies.buy_and_hold import BuyAndHold
 from strategies.tacticalmonthly import TacticalMonthlyRedistributed
 from strategies.tacticalatrmonthly import TacticalAtrMonthly
 from strategies.intraday_volatility_bands import IntradayVolatilityBands
+from strategies.tactical_volume_dca import TacticalVolumeDCA
 
 
 # Canonical strategy registry - single source of truth
@@ -38,9 +39,10 @@ from strategies.intraday_volatility_bands import IntradayVolatilityBands
 STRATEGY_REGISTRY = {
     "dca": ("DCA", DollarCostAveraging, "daily"),
     "bnh": ("Buy & Hold", BuyAndHold, "daily"),
-    "tacticalmonthly": ("DCA Táctico", TacticalMonthlyRedistributed, "daily"),
+    # "tacticalmonthly": ("DCA Táctico", TacticalMonthlyRedistributed, "daily"),  # DEPRECATED: Replaced by volumecorrdca
     "tacticalatrmonthly": ("Corrección Táctica", TacticalAtrMonthly, "daily"),
     "intradayvol": ("Intraday Vol Bands", IntradayVolatilityBands, "minute"),
+    "volumecorrdca": ("Volume Correction DCA", TacticalVolumeDCA, "minute"),
 }
 
 # Default assets for multi-asset comparison mode
