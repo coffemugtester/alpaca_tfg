@@ -19,7 +19,7 @@ class TacticalVolumeDCA(TradeTrackingMixin, bt.Strategy):
     - Simulates a DCA investor with fixed monthly contribution.
     - Each month, one monthly contribution is added to accumulated reserve.
     - Reserve is deployed only when:
-        1. Daily price breaks below lower Bollinger Band (correction detected)
+        1. Daily price breaks below middle Bollinger Band (dip detected)
         2. Intraday volume spike detected (> 2x average volume)
         3. Haven't bought yet this month
     - No selling logic - accumulation only.
@@ -266,25 +266,25 @@ class TacticalVolumeDCA(TradeTrackingMixin, bt.Strategy):
         if not volume_spike:
             return
 
-        # Check 2: Daily correction (price below lower Bollinger Band)
+        # Check 2: Daily correction (price below middle Bollinger Band)
         if not self.has_daily_data:
             return  # Need daily data for correction detection
 
         daily_price = float(self.daily_close[0])
-        daily_lower_bb = float(self.daily_bbands.bot[0])
+        daily_mid_bb = float(self.daily_bbands.mid[0])
 
-        correction_active = daily_price < daily_lower_bb
+        correction_active = daily_price < daily_mid_bb
 
         if not correction_active:
             return
 
         # Both conditions met: Deploy accumulated reserve
         volume_ratio = minute_volume / avg_volume
-        correction_pct = (daily_lower_bb - daily_price) / daily_lower_bb * 100
+        correction_pct = (daily_mid_bb - daily_price) / daily_mid_bb * 100
 
         signal_name = (
             f"Volume Spike ({volume_ratio:.1f}x) + "
-            f"BB Correction ({correction_pct:.1f}% below)"
+            f"BB Mid Dip ({correction_pct:.1f}% below)"
         )
 
         self._buy_accumulated_reserve(signal_name)

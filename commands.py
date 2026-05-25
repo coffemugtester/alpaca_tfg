@@ -39,10 +39,10 @@ from strategies.tactical_volume_dca import TacticalVolumeDCA
 STRATEGY_REGISTRY = {
     "dca": ("DCA", DollarCostAveraging, "daily"),
     "bnh": ("Buy & Hold", BuyAndHold, "daily"),
+    # "tacticalatrmonthly": ("Corrección Táctica", TacticalAtrMonthly, "daily"),  # DEPRECATED: Lower returns, higher DD than Vol Bands
     # "tacticalmonthly": ("DCA Táctico", TacticalMonthlyRedistributed, "daily"),  # DEPRECATED: Replaced by volumecorrdca
-    "tacticalatrmonthly": ("Corrección Táctica", TacticalAtrMonthly, "daily"),
+    # "volumecorrdca": ("Volume Correction DCA", TacticalVolumeDCA, "minute"),  # DEPRECATED: Underperforms plain DCA
     "intradayvol": ("Intraday Vol Bands", IntradayVolatilityBands, "minute"),
-    "volumecorrdca": ("Volume Correction DCA", TacticalVolumeDCA, "minute"),
 }
 
 # Default assets for multi-asset comparison mode
@@ -67,6 +67,10 @@ DEFAULT_ASSETS = [
     "TNL",
     "LIND",
     "TRIP",
+    "DAL",
+    "AAL",
+    "H",
+    "IHG",
 ]
 
 
@@ -424,7 +428,9 @@ def _run_single_symbol_backtest(
         return None
 
 
-def prefetch_data_for_symbols(symbols: list[str], start, end, refresh_cache: bool = False) -> None:
+def prefetch_data_for_symbols(
+    symbols: list[str], start, end, refresh_cache: bool = False
+) -> None:
     """
     Pre-fetch all data for symbols to populate cache and avoid concurrent writes.
 

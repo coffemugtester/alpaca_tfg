@@ -43,9 +43,13 @@ ASSET_CLASSIFICATIONS = {
     "TRIP": ("Stock", "Travel"),
     "MMYT": ("Stock", "Travel"),
     "TNL": ("Stock", "Travel"),
+    "DAL": ("Stock", "Airline"),
+    "AAL": ("Stock", "Airline"),
 
     # Individual Stocks - Other
     "LIND": ("Stock", "Industrial"),
+    "H": ("Stock", "Hotel"),
+    "IHG": ("Stock", "Hotel"),
 }
 
 
