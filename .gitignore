@@ -11,3 +11,5 @@ notes.md
 
 # Database cache
 data/alpaca_cache.db
+drawdown_charts/*
+charts/*

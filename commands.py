@@ -503,12 +503,24 @@ def handle_compare_multi_command(
         end: End datetime
         default_assets: List of default asset symbols to use if --symbols not provided
     """
-    # Clean up global_comparison directory before starting
+    # Clean up output directories before starting
     comparison_dir = "global_comparison"
     if os.path.exists(comparison_dir):
         print(f"Clearing {comparison_dir} directory...")
         shutil.rmtree(comparison_dir)
     os.makedirs(comparison_dir, exist_ok=True)
+
+    charts_dir = "charts"
+    if os.path.exists(charts_dir):
+        print(f"Clearing {charts_dir} directory...")
+        shutil.rmtree(charts_dir)
+    os.makedirs(charts_dir, exist_ok=True)
+
+    drawdown_dir = "drawdown_charts"
+    if os.path.exists(drawdown_dir):
+        print(f"Clearing {drawdown_dir} directory...")
+        shutil.rmtree(drawdown_dir)
+    os.makedirs(drawdown_dir, exist_ok=True)
 
     # Determine which symbols to run
     if args.symbols is None:

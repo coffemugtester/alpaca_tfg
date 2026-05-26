@@ -10,10 +10,14 @@ from pathlib import Path
 from typing import Type
 
 import backtrader as bt
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for saving charts
+import matplotlib.pyplot as plt
 
 from config import calculate_months_between
 from data.alpaca_data import fetch_daily_bars
 from backtesting.data_adapter import df_to_bt_feed
+from backtesting.chart_generation import generate_charts as _generate_charts
 from strategies.dca import DollarCostAveraging
 from strategies.buy_and_hold import BuyAndHold
 from strategies.tacticalmonthly import TacticalMonthlyRedistributed
@@ -224,6 +228,9 @@ def run_strategy_comparison(
 
     # Export unified trade analytics to CSV
     _export_trades_csv(symbol, results, strategies_with_timeframes)
+
+    # Generate and save charts
+    _generate_charts(symbol, results, cash, start, end)
 
     # Return results for summary table
     return {
@@ -595,6 +602,13 @@ def _export_to_csv(
             unused_cash_vs_dca = 0.0
             order_count_vs_dca = 0
 
+        # Calculate Rentabilidad Total: (Final - Initial) / Final * 100
+        rentabilidad_total = (
+            ((result["final_value"] - initial_cash) / result["final_value"]) * 100
+            if result["final_value"] > 0
+            else 0.0
+        )
+
         asset_type, asset_category = get_asset_classification(symbol)
         rows.append(
             {
@@ -608,6 +622,7 @@ def _export_to_csv(
                 "total_return_pct": f"{total_return_pct:.2f}",
                 "total_return_pct_vs_bnh": f"{total_return_vs_bnh:.2f}",
                 "total_return_pct_vs_dca": f"{total_return_vs_dca:.2f}",
+                "rentabilidad_total_pct": f"{rentabilidad_total:.2f}",
                 "cagr_pct": f"{cagr * 100:.2f}",
                 "cagr_pct_vs_bnh": f"{cagr_vs_bnh * 100:.2f}",
                 "cagr_pct_vs_dca": f"{cagr_vs_dca * 100:.2f}",
@@ -642,6 +657,7 @@ def _export_to_csv(
             "total_return_pct",
             "total_return_pct_vs_bnh",
             "total_return_pct_vs_dca",
+            "rentabilidad_total_pct",
             "cagr_pct",
             "cagr_pct_vs_bnh",
             "cagr_pct_vs_dca",
