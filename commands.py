@@ -42,7 +42,7 @@ STRATEGY_REGISTRY = {
     # "tacticalatrmonthly": ("Corrección Táctica", TacticalAtrMonthly, "daily"),  # DEPRECATED: Lower returns, higher DD than Vol Bands
     # "tacticalmonthly": ("DCA Táctico", TacticalMonthlyRedistributed, "daily"),  # DEPRECATED: Replaced by volumecorrdca
     # "volumecorrdca": ("Volume Correction DCA", TacticalVolumeDCA, "minute"),  # DEPRECATED: Underperforms plain DCA
-    "intradayvol": ("Intraday Vol Bands", IntradayVolatilityBands, "minute"),
+    "intradayvol": ("Gestión Activa", IntradayVolatilityBands, "minute"),
 }
 
 # Default assets for multi-asset comparison mode

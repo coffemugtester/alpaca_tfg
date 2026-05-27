@@ -93,6 +93,23 @@ class OrderCountAnalyzer(bt.Analyzer):
         return {"order_count": self.order_count}
 
 
+class _DailyAccountSnapshot(bt.Analyzer):
+    """Capture daily portfolio value and available cash from broker state."""
+
+    def start(self) -> None:
+        self._rows: dict = {}
+
+    def next(self) -> None:
+        dt = self.strategy.datetime.datetime(0)
+        self._rows[dt] = {
+            "portfolio_value": float(self.strategy.broker.getvalue()),
+            "available_cash": float(self.strategy.broker.getcash()),
+        }
+
+    def get_analysis(self) -> dict:
+        return self._rows
+
+
 def run_strategy_comparison(
     symbol: str,
     start: datetime,
@@ -278,6 +295,7 @@ def _run_single_strategy(
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name="drawdown")
     cerebro.addanalyzer(bt.analyzers.TimeReturn, _name="timereturn")
     cerebro.addanalyzer(OrderCountAnalyzer, _name="ordercount")
+    cerebro.addanalyzer(_DailyAccountSnapshot, _name="dailysnapshot")
 
     # Run
     cerebro.run()
@@ -287,17 +305,22 @@ def _run_single_strategy(
 
     strats = cerebro.runstrats
     trades_data = []
+    snapshot_data = {}
     if strats and len(strats) > 0:
         strat = strats[0][0]
         sharpe_analysis = strat.analyzers.sharpe.get_analysis()
         dd_analysis = strat.analyzers.drawdown.get_analysis()
         order_analysis = strat.analyzers.ordercount.get_analysis()
+        snapshot_analysis = strat.analyzers.dailysnapshot.get_analysis()
 
         sharpe_ratio = sharpe_analysis.get("sharperatio", None)
         max_dd = dd_analysis.get("max", {}).get("drawdown", None)
         if max_dd is not None:
             max_dd = max_dd / 100.0  # Convert to decimal
         order_count = order_analysis.get("order_count", 0)
+
+        # Extract time-series data for charts
+        snapshot_data = snapshot_analysis
 
         # Collect trade data from strategy if it has the mixin
         if hasattr(strat, 'get_all_trades'):
@@ -314,6 +337,7 @@ def _run_single_strategy(
         "final_cash": final_cash,
         "order_count": order_count,
         "trades": trades_data,
+        "time_series": snapshot_data,
     }
 
 
