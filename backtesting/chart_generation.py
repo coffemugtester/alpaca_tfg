@@ -57,6 +57,23 @@ def _generate_portfolio_chart(
     strategy_names = list(results.keys())
     colors = plt.cm.tab10(np.linspace(0, 1, len(strategy_names)))
 
+    # Debug: Check if all strategies have same data
+    all_dates = {name: sorted(results[name].get("time_series", {}).keys()) for name in strategy_names}
+    if len(set(len(dates) for dates in all_dates.values())) == 1:
+        print(f"[WARNING] All strategies have same number of dates: {len(next(iter(all_dates.values())))}")
+
+    # Check values at different points
+    for name in strategy_names:
+        ts = results[name].get("time_series", {})
+        if ts:
+            sorted_dates = sorted(ts.keys())
+            if len(sorted_dates) > 300:
+                print(f"  {name}:")
+                print(f"    Day 1: ${ts[sorted_dates[0]]['portfolio_value']:.2f}")
+                print(f"    Day 100: ${ts[sorted_dates[100]]['portfolio_value']:.2f}")
+                print(f"    Day 200: ${ts[sorted_dates[200]]['portfolio_value']:.2f}")
+                print(f"    Day 300: ${ts[sorted_dates[300]]['portfolio_value']:.2f}")
+
     for idx, (strategy_name, color) in enumerate(zip(strategy_names, colors)):
         time_series = results[strategy_name].get("time_series", {})
 
@@ -71,6 +88,17 @@ def _generate_portfolio_chart(
             dates = sorted(time_series.keys())
             portfolio_values = [time_series[dt]["portfolio_value"] for dt in dates]
             final_value = portfolio_values[-1] if portfolio_values else initial_cash
+
+            # Debug for Gestión Activa
+            if strategy_name == "Gestión Activa" and len(dates) > 0:
+                print(f"[CHART DEBUG] {strategy_name}:")
+                print(f"  Total data points: {len(dates)}")
+                print(f"  First date: {dates[0]}, Last date: {dates[-1]}")
+                print(f"  First 5 values: {portfolio_values[:5]}")
+                print(f"  Values from index 250-255: {portfolio_values[250:255] if len(portfolio_values) > 255 else 'Not enough data'}")
+                # Check for cash periods
+                cash_periods = [i for i, v in enumerate(portfolio_values[:500]) if abs(v - 10000.0) < 1.0]
+                print(f"  Days at ~$10k cash (first 500 days): {len(cash_periods)}")
 
             # Plot time series
             ax.plot(dates, portfolio_values,

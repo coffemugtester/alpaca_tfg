@@ -94,17 +94,49 @@ class OrderCountAnalyzer(bt.Analyzer):
 
 
 class _DailyAccountSnapshot(bt.Analyzer):
-    """Capture daily portfolio value and available cash from broker state."""
+    """Capture daily portfolio value at market close (end-of-day snapshot only)."""
 
     def start(self) -> None:
         self._rows: dict = {}
+        self._current_date = None
+        self._last_dt = None
+        self._last_value = None
+        self._last_cash = None
 
     def next(self) -> None:
         dt = self.strategy.datetime.datetime(0)
-        self._rows[dt] = {
-            "portfolio_value": float(self.strategy.broker.getvalue()),
-            "available_cash": float(self.strategy.broker.getcash()),
-        }
+        current_date = dt.date()
+
+        # When date changes, save PREVIOUS day's closing values
+        if self._current_date is not None and current_date != self._current_date:
+            if self._last_dt is not None:
+                # Use date at midnight for consistent keys across all strategies
+                date_key = datetime.combine(self._current_date, datetime.min.time())
+                self._rows[date_key] = {
+                    "portfolio_value": self._last_value,
+                    "available_cash": self._last_cash,
+                }
+
+                # Debug: Check if position is flat
+                position = self.strategy.getposition()
+                if position.size == 0 and abs(self._last_value - self._last_cash) > 0.01:
+                    print(f"[DEBUG] {self._last_dt.date()}: No position but portfolio ${self._last_value:.2f} != cash ${self._last_cash:.2f}")
+
+        # Always update last values (will be the day's closing values)
+        self._last_dt = dt
+        self._last_value = float(self.strategy.broker.getvalue())
+        self._last_cash = float(self.strategy.broker.getcash())
+        self._current_date = current_date
+
+    def stop(self) -> None:
+        # Save the final day's snapshot
+        if self._current_date is not None and self._last_value is not None:
+            # Use date at midnight for consistent keys
+            date_key = datetime.combine(self._current_date, datetime.min.time())
+            self._rows[date_key] = {
+                "portfolio_value": self._last_value,
+                "available_cash": self._last_cash,
+            }
 
     def get_analysis(self) -> dict:
         return self._rows
